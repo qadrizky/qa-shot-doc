@@ -548,6 +548,13 @@ function(r){"object"==typeof e&&void 0!==t?t.exports=r():"function"==typeof defi
   #cards{display:flex;flex-direction:column;gap:10px;max-width:760px;margin:0 auto}
   .card{display:flex;gap:12px;padding:10px;background:var(--panel);border:1px solid var(--line);
     border-radius:12px;box-shadow:var(--shadow)}
+  .card.dragging{opacity:.75;border-color:var(--accent);box-shadow:0 10px 26px rgba(0,0,0,.28)}
+  /* Pegangan khusus: menyeret dari sini saja, supaya di layar sentuh sisa kartu
+     tetap bisa dipakai untuk men-scroll daftar. */
+  .grip{flex:0 0 26px;align-self:stretch;display:grid;place-items:center;cursor:grab;
+    color:var(--muted);background:var(--panel-2);border:1px solid var(--line);border-radius:8px;
+    touch-action:none;-webkit-user-select:none;user-select:none;font-size:15px;line-height:1}
+  .grip:active{cursor:grabbing;border-color:var(--accent);color:var(--accent)}
   .thumb{position:relative;flex:0 0 84px;width:84px;height:112px;border-radius:8px;overflow:hidden;
     background:var(--panel-2);border:1px solid var(--line)}
   .thumb img{width:100%;height:100%;object-fit:contain;display:block}
@@ -561,6 +568,10 @@ function(r){"object"==typeof e&&void 0!==t?t.exports=r():"function"==typeof defi
   .tag{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:999px;font-size:11px;
     font-weight:600;background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}
   .tag.none{background:var(--panel-2);color:var(--muted)}
+  .tag.auto{background:color-mix(in srgb,#f59e0b 20%,transparent);color:#b45309}
+  @media (prefers-color-scheme: dark){ .tag.auto{color:#fbbf24} }
+  .cats{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:0 12px;margin:4px 0 2px}
+  .cats .chk{margin-bottom:6px;font-size:13px}
 
   /* ---------- editor sensor ---------- */
   .redactor{position:fixed;inset:0;z-index:80;background:#0b0d10;color:#e8eaee;
@@ -576,10 +587,17 @@ function(r){"object"==typeof e&&void 0!==t?t.exports=r():"function"==typeof defi
      berukuran otomatis, akibatnya screenshot portrait meluber keluar layar. */
   .rdstage img{display:block;width:auto;height:auto;max-width:100%;
     max-height:calc(100vh - 160px);max-height:calc(100dvh - 160px)}
-  .rdbox{position:absolute;border:2px solid #3b82f6;background:rgba(59,130,246,.12)}
+  .rdbox{position:absolute;border:2px solid #3b82f6;background:rgba(59,130,246,.12);cursor:move;
+    touch-action:none}
+  .rdbox.auto{border-color:#f59e0b;background:rgba(245,158,11,.14)}
+  .rdbox.moving{background:rgba(224,27,27,.34);border-style:dashed}
   .rdbox .x{position:absolute;top:-11px;right:-11px;width:26px;height:26px;border-radius:50%;
     background:var(--danger);color:#fff;border:2px solid #0b0d10;font-size:13px;line-height:1;
-    cursor:pointer;display:grid;place-items:center;padding:0}
+    cursor:pointer;display:grid;place-items:center;padding:0;touch-action:none}
+  /* Pegangan ubah ukuran di sudut kanan-bawah. */
+  .rdbox .rz{position:absolute;right:-11px;bottom:-11px;width:24px;height:24px;border-radius:6px;
+    background:#3b82f6;border:2px solid #0b0d10;cursor:nwse-resize;padding:0;touch-action:none}
+  .rdbox.auto .rz{background:#f59e0b}
   .rdtemp{position:absolute;border:2px dashed #3b82f6;background:rgba(59,130,246,.2);pointer-events:none}
   .rdfoot{flex:0 0 auto;padding:8px 12px 14px;color:#9aa3af;font-size:12px;text-align:center;line-height:1.5}
 
@@ -669,6 +687,27 @@ function(r){"object"==typeof e&&void 0!==t?t.exports=r():"function"==typeof defi
       </div>
 
       <div class="grp">
+        <h3>Sensor otomatis</h3>
+        <label class="chk"><input type="checkbox" id="oAuto"> Deteksi &amp; sensor otomatis (OCR)</label>
+        <div id="autoBox" hidden>
+          <div class="cats">
+            <label class="chk"><input type="checkbox" data-cat="nik" checked> NIK (16 digit)</label>
+            <label class="chk"><input type="checkbox" data-cat="npwp" checked> NPWP</label>
+            <label class="chk"><input type="checkbox" data-cat="dob" checked> Tanggal lahir</label>
+            <label class="chk"><input type="checkbox" data-cat="pob" checked> Tempat lahir</label>
+            <label class="chk"><input type="checkbox" data-cat="mother" checked> Nama ibu kandung</label>
+            <label class="chk"><input type="checkbox" data-cat="name" checked> Nama lengkap</label>
+            <label class="chk"><input type="checkbox" data-cat="phone" checked> No. HP</label>
+            <label class="chk"><input type="checkbox" data-cat="email" checked> Email</label>
+            <label class="chk"><input type="checkbox" data-cat="account"> No. rekening / kartu</label>
+            <label class="chk"><input type="checkbox" data-cat="address"> Alamat</label>
+          </div>
+          <button class="btn sm" id="bRescan" style="margin-top:4px">Pindai ulang semua</button>
+        </div>
+        <p class="hint" id="autoHint" style="margin:9px 0 0"></p>
+      </div>
+
+      <div class="grp">
         <h3>Kualitas export</h3>
         <select id="dpi">
           <option value="150">Normal — 150 DPI (file kecil)</option>
@@ -710,7 +749,7 @@ function(r){"object"==typeof e&&void 0!==t?t.exports=r():"function"==typeof defi
   <div class="rdbar">
     <button class="btn" id="rdCancel">Batal</button>
     <div class="seg" id="rdStyle" style="max-width:290px">
-      <button data-v="black" aria-pressed="true">Blok hitam</button>
+      <button data-v="red" aria-pressed="true">Blok merah</button>
       <button data-v="blur" aria-pressed="false">Blur</button>
       <button data-v="pixel" aria-pressed="false">Pixel</button>
     </div>
@@ -724,7 +763,8 @@ function(r){"object"==typeof e&&void 0!==t?t.exports=r():"function"==typeof defi
 </div>
 
 <input type="file" id="file" accept="image/*" multiple hidden>
-<div class="veil" id="veil"><div class="box" id="veilText">Menyiapkan…</div></div>
+<div class="veil" id="veil"><div class="box"><span id="veilText">Menyiapkan…</span>
+  <button class="btn" id="veilCancel" hidden style="margin-left:14px">Batalkan</button></div></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -740,6 +780,7 @@ const CAP_GAP  = 1.6;                // jarak gambar → caption (mm)
 const TWIP     = 56.6929;            // 1 mm dalam twip (DOCX)
 const SIZES    = { a4:[210,297], letter:[215.9,279.4], a5:[148,210] };
 const DISPLAY_W = 900;               // lebar maksimum gambar pratinjau (px)
+const REDACT_RED = '#e01b1b';        // warna blok sensor
 
 const S = {
   items: [],
@@ -747,6 +788,8 @@ const S = {
   viewLocked: false,       // true setelah pengguna memilih mode sendiri
   opts: { cols:2, gap:4, margin:12, size:'a4', orient:'portrait',
           header:true, num:true, cap:true, border:true, dpi:'220' },
+  auto: { on:false, cats:{ nik:true, npwp:true, dob:true, pob:true, mother:true,
+                           name:true, phone:true, email:true, account:false, address:false } },
   meta: { title:'', tester:'', date:'', device:'', build:'' }
 };
 let uid = 0;
@@ -870,7 +913,7 @@ function drawRedacted(ctx, item, dw, dh){
       ctx.drawImage(oc, 0, 0, tw, th, x, y, w, h);
       ctx.restore();
     }else{
-      ctx.fillStyle = '#000'; ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = REDACT_RED; ctx.fillRect(x, y, w, h);
     }
   }
 }
@@ -1088,6 +1131,11 @@ function renderCards(wrap){
   wrap.innerHTML = '';
   S.items.forEach((it, i)=>{
     const card = el('div','card');
+    card._item = it;                       // dipakai saat menyusun ulang setelah drag
+
+    const grip = el('div','grip');
+    grip.textContent = '⠿'; grip.title = 'Seret untuk mengubah urutan';
+    card.appendChild(grip);
 
     const th = el('div','thumb');
     const im = new Image(); im.src = displaySrc(it); im.alt = it.name; th.appendChild(im);
@@ -1097,8 +1145,11 @@ function renderCards(wrap){
     const head = el('div','chead');
     const num  = el('div','cnum'); num.textContent = i+1;
     const nm   = el('div','cname'); nm.textContent = it.name;
-    const tag  = el('span', 'tag' + (hasRed(it) ? '' : ' none'));
-    tag.textContent = hasRed(it) ? it.red.length + ' area disensor' : 'belum disensor';
+    const nAuto = (it.red||[]).filter(b=>b.auto).length;
+    const tag  = el('span', 'tag' + (hasRed(it) ? (nAuto ? ' auto' : '') : ' none'));
+    tag.textContent = hasRed(it)
+      ? it.red.length + ' area disensor' + (nAuto ? ' · ' + nAuto + ' otomatis' : '')
+      : 'belum disensor';
     head.appendChild(num); head.appendChild(nm); head.appendChild(el('span','spacer')); head.appendChild(tag);
     body.appendChild(head);
 
@@ -1119,6 +1170,50 @@ function renderCards(wrap){
     wrap.appendChild(card);
   });
 }
+
+/* Susun ulang dengan menyeret pegangan. Kartu dipindah langsung di DOM selagi
+   diseret, lalu urutan state disusun ulang dari urutan DOM saat dilepas. */
+(function bindCardSort(){
+  const wrap = $('#cards');
+  let dragEl = null;
+
+  function renumber(){
+    [...wrap.children].forEach((n,i)=>{
+      const num = n.querySelector('.cnum'); if(num) num.textContent = i+1;
+    });
+  }
+  wrap.addEventListener('pointerdown', e=>{
+    const grip = e.target.closest('.grip'); if(!grip) return;
+    dragEl = grip.closest('.card'); if(!dragEl) return;
+    e.preventDefault();
+    try{ grip.setPointerCapture(e.pointerId); }catch(err){}
+    dragEl.classList.add('dragging');
+  });
+  wrap.addEventListener('pointermove', e=>{
+    if(!dragEl) return;
+    e.preventDefault();
+    let before = null;
+    for(const k of wrap.children){
+      if(k === dragEl) continue;
+      const r = k.getBoundingClientRect();
+      if(e.clientY < r.top + r.height/2){ before = k; break; }
+    }
+    if(before){ if(before !== dragEl.nextSibling) { wrap.insertBefore(dragEl, before); renumber(); } }
+    else if(wrap.lastElementChild !== dragEl){ wrap.appendChild(dragEl); renumber(); }
+
+    const st = $('#stage'), r = st.getBoundingClientRect();   // ikut menggulir di tepi
+    if(e.clientY < r.top + 70)      st.scrollTop -= 14;
+    else if(e.clientY > r.bottom - 70) st.scrollTop += 14;
+  });
+  const drop = ()=>{
+    if(!dragEl) return;
+    dragEl.classList.remove('dragging'); dragEl = null;
+    S.items = [...wrap.children].map(n=>n._item).filter(Boolean);
+    render();
+  };
+  wrap.addEventListener('pointerup', drop);
+  wrap.addEventListener('pointercancel', drop);
+})();
 
 function mkBtn(label, title, fn){
   const b = el('button'); b.type='button'; b.textContent=label; b.title=title;
@@ -1149,7 +1244,7 @@ function onCaption(b, node){
 }
 
 /* ====================== editor sensor ====================== */
-const RD = { idx:-1, boxes:[], style:'black', drag:null, temp:null };
+const RD = { idx:-1, boxes:[], style:'red', drag:null, temp:null, active:-1, baseSrc:null };
 
 function openRedactor(i){
   const it = S.items[i];
@@ -1175,23 +1270,38 @@ function closeRedactor(save){
 }
 // Pratinjau memakai gambar yang sensornya sudah dibakar, jadi yang terlihat di sini
 // persis sama dengan hasil export. Kotak hanya digambar sebagai garis bantu.
-function paintRedactor(){
+// Saat sebuah kotak sedang digeser/diubah ukurannya, kotak itu dikeluarkan dulu dari
+// gambar yang dibakar supaya isi di bawahnya terlihat selagi diposisikan.
+function setBoxStyle(d, b){
+  d.style.left   = (b.x*100)+'%'; d.style.top    = (b.y*100)+'%';
+  d.style.width  = (b.w*100)+'%'; d.style.height = (b.h*100)+'%';
+}
+function paintRedactor(opts){
   const it = S.items[RD.idx];
   if(!it) return;
-  $('#rdImg').src = RD.boxes.length ? buildPreview(it, RD.boxes) : it.dataURL;
+  const o = opts || {};
+  if(!o.keepImage){
+    const shown = o.exclude != null ? RD.boxes.filter((_,i)=>i !== o.exclude) : RD.boxes;
+    $('#rdImg').src = shown.length ? buildPreview(it, shown) : it.dataURL;
+  }
   const stage = $('#rdStage');
   [...stage.querySelectorAll('.rdbox,.rdtemp')].forEach(n=>n.remove());
   RD.boxes.forEach((b,i)=>{
-    const d = el('div','rdbox');
-    d.style.cssText = 'left:'+(b.x*100)+'%;top:'+(b.y*100)+'%;width:'+(b.w*100)+'%;height:'+(b.h*100)+'%';
+    const d = el('div','rdbox' + (b.auto ? ' auto' : '') + (i === o.exclude ? ' moving' : ''));
+    d.dataset.i = i;
+    d.title = b.auto ? 'Terdeteksi otomatis — seret untuk menggeser' : 'Seret untuk menggeser';
+    setBoxStyle(d, b);
     const x = el('button','x'); x.type='button'; x.textContent='✕'; x.title='Hapus kotak ini';
-    x.addEventListener('pointerdown', e=>e.stopPropagation());
     x.addEventListener('click', e=>{ e.stopPropagation(); RD.boxes.splice(i,1); paintRedactor(); });
-    d.appendChild(x);
+    const rz = el('button','rz'); rz.type='button'; rz.title='Ubah ukuran';
+    d.appendChild(x); d.appendChild(rz);
     stage.appendChild(d);
   });
+  const auto = RD.boxes.filter(b=>b.auto).length;
   $('#rdFoot').textContent = RD.boxes.length
-    ? RD.boxes.length + ' area ditutup. Blok hitam paling aman — blur dan pixel tetap menyisakan pola samar.'
+    ? RD.boxes.length + ' area ditutup' + (auto ? ' (' + auto + ' terdeteksi otomatis)' : '')
+      + '. Seret kotak untuk menggeser, tarik sudutnya untuk mengubah ukuran. '
+      + 'Blok solid paling aman — blur dan pixel tetap menyisakan pola samar.'
     : 'Seret pada gambar untuk menutup area yang berisi data sensitif (NIK, tanggal lahir, nama ibu kandung, foto KTP, dll).';
   $('#rdUndo').disabled = $('#rdClear').disabled = !RD.boxes.length;
 }
@@ -1203,40 +1313,80 @@ function buildPreview(item, boxes){
   drawRedacted(ctx, { ...item, red:boxes }, w, h);
   return c.toDataURL('image/jpeg', 0.9);
 }
+const clamp = (v,lo,hi) => Math.min(hi, Math.max(lo, v));
 (function bindRedactor(){
   const stage = $('#rdStage');
-  const rect  = () => $('#rdImg').getBoundingClientRect();
   const norm  = (e)=>{
-    const r = rect();
-    return { x: Math.min(1, Math.max(0, (e.clientX-r.left)/r.width)),
-             y: Math.min(1, Math.max(0, (e.clientY-r.top )/r.height)) };
+    const r = $('#rdImg').getBoundingClientRect();
+    return { x: clamp((e.clientX-r.left)/r.width, 0, 1),
+             y: clamp((e.clientY-r.top )/r.height, 0, 1) };
   };
+  let mode = null, from = null, base = null, idx = -1, temp = null;
+
   stage.addEventListener('pointerdown', e=>{
-    if(RD.idx < 0 || e.target.closest('.x')) return;
+    if(RD.idx < 0 || e.target.closest('.x')) return;   // tombol hapus punya handler sendiri
+    const boxEl = e.target.closest('.rdbox');
+    const onRz  = !!e.target.closest('.rz');
     e.preventDefault();
-    stage.setPointerCapture(e.pointerId);
-    RD.drag = norm(e);
-    RD.temp = el('div','rdtemp'); stage.appendChild(RD.temp);
+    try{ stage.setPointerCapture(e.pointerId); }catch(err){}
+    from = norm(e);
+    if(boxEl){
+      idx  = +boxEl.dataset.i;
+      mode = onRz ? 'resize' : 'move';
+      base = { ...RD.boxes[idx] };
+      paintRedactor({ exclude: idx });                 // lihat isi di bawah kotak
+    }else{
+      mode = 'create'; idx = -1;
+      temp = el('div','rdtemp'); stage.appendChild(temp);
+    }
   });
+
   stage.addEventListener('pointermove', e=>{
-    if(!RD.drag || !RD.temp) return;
+    if(!mode) return;
     const p = norm(e);
-    const x = Math.min(RD.drag.x, p.x), y = Math.min(RD.drag.y, p.y);
-    const w = Math.abs(p.x-RD.drag.x),  h = Math.abs(p.y-RD.drag.y);
-    RD.temp.style.cssText = 'left:'+(x*100)+'%;top:'+(y*100)+'%;width:'+(w*100)+'%;height:'+(h*100)+'%';
+    if(mode === 'create'){
+      if(!temp) return;
+      temp.style.left   = (Math.min(from.x,p.x)*100)+'%';
+      temp.style.top    = (Math.min(from.y,p.y)*100)+'%';
+      temp.style.width  = (Math.abs(p.x-from.x)*100)+'%';
+      temp.style.height = (Math.abs(p.y-from.y)*100)+'%';
+      return;
+    }
+    const b = RD.boxes[idx];
+    if(!b) return;
+    if(mode === 'move'){
+      b.x = clamp(base.x + (p.x-from.x), 0, 1-base.w);
+      b.y = clamp(base.y + (p.y-from.y), 0, 1-base.h);
+    }else{
+      b.w = clamp(base.w + (p.x-from.x), 0.01,  1-b.x);
+      b.h = clamp(base.h + (p.y-from.y), 0.006, 1-b.y);
+    }
+    const d = stage.querySelector('.rdbox[data-i="'+idx+'"]');
+    if(d) setBoxStyle(d, b);
   });
+
   const finish = e=>{
-    if(!RD.drag) return;
+    if(!mode) return;
     const p = norm(e);
-    const x = Math.min(RD.drag.x, p.x), y = Math.min(RD.drag.y, p.y);
-    const w = Math.abs(p.x-RD.drag.x),  h = Math.abs(p.y-RD.drag.y);
-    RD.drag = null;
-    if(RD.temp){ RD.temp.remove(); RD.temp = null; }
-    if(w > 0.012 && h > 0.006) RD.boxes.push({ x, y, w, h, s: RD.style });
+    if(mode === 'create'){
+      if(temp){ temp.remove(); temp = null; }
+      const x = Math.min(from.x,p.x), y = Math.min(from.y,p.y);
+      const w = Math.abs(p.x-from.x),  h = Math.abs(p.y-from.y);
+      if(w > 0.012 && h > 0.006) RD.boxes.push({ x, y, w, h, s: RD.style });
+    }else if(RD.boxes[idx]){
+      // kotak hasil deteksi yang sudah disesuaikan tangan dianggap milik pengguna,
+      // supaya tidak ikut terhapus saat sensor otomatis dimatikan.
+      delete RD.boxes[idx].auto;
+    }
+    mode = null; idx = -1; base = null;
     paintRedactor();
   };
   stage.addEventListener('pointerup', finish);
-  stage.addEventListener('pointercancel', ()=>{ RD.drag=null; if(RD.temp){RD.temp.remove();RD.temp=null;} });
+  stage.addEventListener('pointercancel', ()=>{
+    if(temp){ temp.remove(); temp = null; }
+    mode = null; idx = -1; base = null; paintRedactor();
+  });
+
   $('#rdStyle').addEventListener('click', e=>{
     const b = e.target.closest('button'); if(!b) return;
     RD.style = b.dataset.v;
@@ -1274,6 +1424,212 @@ async function addFiles(list){
   }
   veil(false); render();
   toast(files.length + ' gambar ditambahkan');
+  if(S.auto.on) scanAll(false);         // gambar baru ikut dipindai
+}
+
+/* ====================== sensor otomatis (OCR) ======================
+   Semua pengenalan teks berjalan lokal lewat Tesseract yang di-host sendiri di
+   folder vendor/ — tidak ada gambar yang dikirim ke layanan mana pun. Hasil OCR
+   disimpan per gambar, jadi mengubah pilihan kategori tidak perlu memindai ulang.
+   Deteksi ini sengaja diposisikan sebagai KANDIDAT, bukan jaminan: yang meleset
+   satu angka lebih berbahaya daripada tidak ada deteksi sama sekali, karena
+   membuat orang berhenti memeriksa.                                              */
+const OCR_MAX_W = 1600;                // OCR tidak butuh resolusi penuh
+const digits = t => (t.match(/\d/g) || []).join('');
+const normWord = t => String(t).toLowerCase().replace(/[^a-z0-9]+/g,'');
+
+const PATTERNS = {
+  nik:   [{ re:/\b\d[\d .\-]{14,24}\d\b/g,                       ok:m=>digits(m).length === 16 }],
+  npwp:  [{ re:/\b\d{2}[.\-]\d{3}[.\-]\d{3}[.\-]?\d?[.\-]?\d{3}[.\-]\d{3}\b/g,
+                                                                 ok:m=>[15,16].includes(digits(m).length) }],
+  dob:   [{ re:/\b\d{1,2}\s?[-/.]\s?\d{1,2}\s?[-/.]\s?\d{2,4}\b/g },
+          { re:/\b\d{1,2}\s+(jan|feb|mar|apr|mei|may|jun|jul|agu|aug|sep|okt|oct|nov|des|dec)[a-z]*\.?\s+\d{4}\b/gi }],
+  phone: [{ re:/(?:\+?62|0)\s?8[\d\s.\-]{7,14}\d/g,              ok:m=>{const d=digits(m).length; return d>=10 && d<=15;} }],
+  email: [{ re:/[A-Za-z0-9._%+\-]+\s?@\s?[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/g }],
+  account:[{ re:/\b\d[\d .\-]{8,22}\d\b/g,                       ok:m=>{const d=digits(m).length; return d>=10 && d<=19;} }]
+};
+// Label dicocokkan dari awal baris. Yang terpanjang diuji lebih dulu supaya
+// "Nama Ibu Kandung" tidak keburu tertangkap oleh label "Nama".
+const LABEL_LIST = [
+  ['mother',  ['nama ibu kandung','nama gadis ibu kandung','nama ibu','ibu kandung']],
+  ['pob',     ['tempat tgl lahir','tempat tanggal lahir','tempat dan tanggal lahir','tempat lahir']],
+  ['dob',     ['tanggal lahir','tgl lahir']],
+  ['nik',     ['nomor induk kependudukan','nomor ktp','no ktp','nik']],
+  ['npwp',    ['no npwp','npwp']],
+  ['name',    ['nama sesuai ktp','nama lengkap','nama']],
+  ['address', ['alamat domisili','alamat lengkap','alamat','domisili']],
+  ['phone',   ['nomor telepon','no handphone','nomor hp','no telp','no telepon','no hp']],
+  ['email',   ['alamat email','email','surel']]
+].flatMap(([cat, list]) => list.map(t=>({ cat, words:t.split(' ') })))
+ .sort((a,b)=>b.words.length - a.words.length);
+
+function lineInfo(line){
+  let text = ''; const spans = [];
+  line.words.forEach((w,i)=>{
+    if(i) text += ' ';
+    const st = text.length; text += w.t;
+    spans.push({ t:w.t, s:st, e:text.length, b:w.bbox });
+  });
+  return { text, spans, bbox:line.bbox };
+}
+function unionBox(list){
+  if(!list.length) return null;
+  return { x0:Math.min(...list.map(b=>b.x0)), y0:Math.min(...list.map(b=>b.y0)),
+           x1:Math.max(...list.map(b=>b.x1)), y1:Math.max(...list.map(b=>b.y1)) };
+}
+function spanBox(info, s, e){
+  return unionBox(info.spans.filter(sp=>sp.e > s && sp.s < e).map(sp=>sp.b));
+}
+// Satu kata hasil OCR bisa memuat beberapa kata label sekaligus, misalnya
+// "Tempat/Tgl" pada label "Tempat/Tgl Lahir". Karena itu pemisah non-alfanumerik
+// dipecah jadi token terpisah, sambil tetap mencatat kata asalnya supaya nilai
+// setelah label bisa dipetakan kembali ke bounding box yang benar.
+function tokenize(info){
+  const toks = [];
+  info.spans.forEach((sp, wi)=>{
+    String(sp.t).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim().split(' ')
+      .filter(Boolean).forEach(t=>toks.push({ t, wi }));
+  });
+  return toks;
+}
+function matchLabel(info){
+  const toks = tokenize(info);
+  for(const L of LABEL_LIST){
+    if(toks.length < L.words.length) continue;
+    let ok = true;
+    for(let i=0;i<L.words.length;i++){
+      if(toks[i].t !== L.words[i]){ ok = false; break; }
+    }
+    if(!ok) continue;
+    const from = toks[L.words.length-1].wi + 1;      // nilai dimulai pada kata berikutnya
+    return { cat:L.cat, from, hasValue: from < info.spans.length };
+  }
+  return null;
+}
+function mkAuto(bbox, ocr, cat){
+  const padX = 0.006, padY = 0.005;
+  const x = clamp(bbox.x0/ocr.w - padX, 0, 1);
+  const y = clamp(bbox.y0/ocr.h - padY, 0, 1);
+  return { x, y,
+           w: Math.min((bbox.x1-bbox.x0)/ocr.w + padX*2, 1-x),
+           h: Math.min((bbox.y1-bbox.y0)/ocr.h + padY*2, 1-y),
+           s:'red', auto:true, cat };
+}
+function overlapRatio(a,b){
+  const ox = Math.max(0, Math.min(a.x+a.w, b.x+b.w) - Math.max(a.x, b.x));
+  const oy = Math.max(0, Math.min(a.y+a.h, b.y+b.h) - Math.max(a.y, b.y));
+  const area = a.w*a.h;
+  return area ? (ox*oy)/area : 0;
+}
+function dedupe(list){
+  const out = [];
+  list.sort((a,b)=>(b.w*b.h)-(a.w*a.h));
+  for(const b of list) if(!out.some(o=>overlapRatio(b,o) > 0.6)) out.push(b);
+  return out;
+}
+function detect(ocr, cats){
+  const found = [], infos = ocr.lines.map(lineInfo);
+  infos.forEach((info, li)=>{
+    for(const cat of Object.keys(PATTERNS)){
+      if(!cats[cat]) continue;
+      for(const pat of PATTERNS[cat]){
+        pat.re.lastIndex = 0;
+        let m;
+        while((m = pat.re.exec(info.text)) !== null){
+          if(pat.ok && !pat.ok(m[0])) continue;
+          const b = spanBox(info, m.index, m.index + m[0].length);
+          if(b) found.push(mkAuto(b, ocr, cat));
+        }
+      }
+    }
+    const hit = matchLabel(info);
+    if(hit && cats[hit.cat]){
+      let b = hit.hasValue ? unionBox(info.spans.slice(hit.from).map(sp=>sp.b)) : null;
+      if(!b){
+        const nxt = infos[li+1];                        // nilainya ada di baris berikutnya
+        if(nxt && !matchLabel(nxt)) b = nxt.bbox;
+      }
+      if(b) found.push(mkAuto(b, ocr, hit.cat));
+    }
+  });
+  return dedupe(found);
+}
+
+let _worker = null, _scanning = false, _cancel = false;
+function loadScript(src){
+  return new Promise((res,rej)=>{
+    const t = el('script'); t.src = src;
+    t.onload = res; t.onerror = ()=>rej(new Error('gagal memuat ' + src));
+    document.head.appendChild(t);
+  });
+}
+async function getWorker(){
+  if(_worker) return _worker;
+  if(!window.Tesseract) await loadScript('vendor/tesseract/tesseract.min.js');
+  _worker = await Tesseract.createWorker('eng', 1, {
+    workerPath:'vendor/tesseract/worker.min.js',
+    corePath:  'vendor/tesseract/',
+    langPath:  'vendor/tesseract/lang',
+    cacheMethod:'none'
+  });
+  return _worker;
+}
+function ocrCanvas(item){
+  const w = Math.min(OCR_MAX_W, item.w), h = Math.round(item.h * (w/item.w));
+  const c = el('canvas'); c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0,0,w,h);
+  ctx.drawImage(item._img, 0, 0, w, h);   // dipindai dari gambar asli, bukan yang sudah disensor
+  return c;
+}
+async function scanAll(force){
+  if(_scanning || !S.items.length) return;
+  const todo = S.items.filter(it => force || !it._ocr);
+  if(!todo.length){ applyAuto(true); return; }
+  _scanning = true; _cancel = false;
+  $('#veilCancel').hidden = false;
+  try{
+    veil(true, 'Menyiapkan OCR…'); await yieldUI();
+    const w = await getWorker();
+    for(let i=0; i<todo.length; i++){
+      if(_cancel) break;
+      veil(true, 'Memindai gambar ' + (i+1) + ' dari ' + todo.length + '…'); await yieldUI();
+      const c = ocrCanvas(todo[i]);
+      const { data } = await w.recognize(c);
+      todo[i]._ocr = { w:c.width, h:c.height,
+        lines: (data.lines||[]).map(l=>({ bbox:l.bbox,
+          words:(l.words||[]).map(x=>({ t:x.text, bbox:x.bbox })) })) };
+    }
+  }catch(err){
+    console.error(err);
+    toast('OCR gagal dimuat: ' + err.message);
+  }finally{
+    _scanning = false; $('#veilCancel').hidden = true; veil(false);
+  }
+  applyAuto(true);
+}
+/* Menyusun ulang kotak: yang manual selalu dipertahankan, yang otomatis diturunkan
+   ulang dari hasil OCR yang sudah tersimpan. */
+function applyAuto(report){
+  let total = 0, imgs = 0;
+  S.items.forEach(it=>{
+    const manual = (it.red || []).filter(b=>!b.auto);
+    let next = manual;
+    if(S.auto.on && it._ocr){
+      const found = detect(it._ocr, S.auto.cats)
+        .filter(b => !manual.some(m => overlapRatio(b,m) > 0.6));
+      if(found.length){ imgs++; total += found.length; }
+      next = manual.concat(found);
+    }
+    if(next.length !== (it.red||[]).length || next !== it.red){
+      it.red = next; it._rev = (it._rev || 0) + 1;
+    }
+  });
+  render();
+  if(report){
+    toast(total ? total + ' area terdeteksi di ' + imgs + ' gambar — periksa lagi sebelum export'
+                : 'Tidak ada data sensitif yang terdeteksi');
+  }
 }
 
 /* ====================== encoder untuk export ====================== */
@@ -1492,6 +1848,29 @@ $('#viewSeg').addEventListener('click', e=>{
   $('#'+id).addEventListener('input', e=>{ S.meta[key] = e.target.value; render(); });
 });
 $('#dpi').addEventListener('change', e=>{ S.opts.dpi = e.target.value; });
+
+/* ---------- sensor otomatis ---------- */
+// Worker OCR dimuat lewat fetch; dari file:// browser memblokirnya, jadi fitur ini
+// hanya tersedia saat halaman dibuka lewat http/https.
+const autoSupported = location.protocol !== 'file:';
+$('#autoHint').textContent = autoSupported
+  ? 'Unduhan pertama ±6 MB lalu tersimpan di cache browser. Pengenalan teks berjalan lokal — gambar tidak dikirim ke mana pun. Hasilnya kandidat, bukan jaminan: tetap periksa sebelum export.'
+  : 'Sensor otomatis hanya jalan bila halaman dibuka lewat http/https. Saat file dibuka langsung dari disk, browser memblokir worker OCR. Sensor manual tetap berfungsi.';
+$('#oAuto').disabled = !autoSupported;
+$('#oAuto').addEventListener('change', e=>{
+  S.auto.on = e.target.checked;
+  $('#autoBox').hidden = !S.auto.on;
+  if(S.auto.on) scanAll(false); else applyAuto(false);
+});
+[...document.querySelectorAll('.cats input')].forEach(c=>{
+  S.auto.cats[c.dataset.cat] = c.checked;
+  c.addEventListener('change', ()=>{
+    S.auto.cats[c.dataset.cat] = c.checked;
+    if(S.auto.on) applyAuto(false);
+  });
+});
+$('#bRescan').addEventListener('click', ()=>scanAll(true));
+$('#veilCancel').addEventListener('click', ()=>{ _cancel = true; toast('Pemindaian dihentikan'); });
 
 $('#bAdd').addEventListener('click', ()=>$('#file').click());
 $('#bPick').addEventListener('click', ()=>$('#file').click());
