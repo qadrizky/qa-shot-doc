@@ -15,16 +15,49 @@ satu gambar bisa memakan satu halaman penuh.
    - seret gambar untuk mengubah urutan, atau pakai tombol ◀ ▶
    - klik area caption untuk mengetik keterangan tiap langkah
    - header dokumen, penomoran step, caption, dan bingkai bisa dimatikan
-3. **Export** — tombol *Export PDF* atau *Export DOCX*.
+3. **Sensor data sensitif** — tombol *Sensor data* pada tiap gambar membuka
+   editor layar penuh. Seret pada gambar untuk menutup area yang memuat NIK,
+   tanggal/tempat lahir, nama ibu kandung, foto KTP, atau data lain. Tersedia
+   tiga gaya: blok hitam, blur, dan pixel.
+4. **Export** — tombol *Export PDF* atau *Export DOCX*.
 
 Preview di layar adalah WYSIWYG: pembagian halaman yang terlihat sama persis
 dengan hasil PDF.
+
+### Di HP
+
+Pada layar di bawah 820px tampilan otomatis berpindah ke **mode daftar**:
+tiap gambar jadi satu kartu berisi thumbnail, kolom keterangan berukuran
+normal, dan tombol urutan/sensor/hapus. Tombol *Pratinjau halaman* menampilkan
+hasil susunan kertasnya. Tombol export menempel di bawah agar terjangkau jempol.
+Pilihan mode yang kamu tekan sendiri tidak akan ditimpa saat ukuran layar berubah.
 
 ## Privasi
 
 Semua proses berjalan di browser. Gambar tidak pernah dikirim ke server mana
 pun — tidak ada backend, tidak ada penyimpanan, tidak ada analytics. Menutup
 atau me-refresh tab akan menghapus semuanya.
+
+### Cara kerja sensor
+
+Sensor **dibakar ke piksel** sebelum gambar dimasukkan ke PDF/DOCX, bukan
+ditumpuk sebagai kotak di atasnya. Ini penting: tool yang sekadar menggambar
+kotak hitam di atas gambar meninggalkan gambar asli utuh di dalam file, dan
+data aslinya bisa diambil kembali dengan mudah. Di sini piksel aslinya benar
+benar hilang dari file hasil — sudah diverifikasi dengan membongkar kembali
+gambar yang tertanam di PDF maupun DOCX.
+
+Berlaku untuk semua tingkat kualitas, termasuk *Asli — tanpa kompresi*.
+
+Efek samping yang menguntungkan: karena setiap gambar diproses ulang lewat
+canvas, metadata EXIF (lokasi GPS, model perangkat) ikut hilang dari file hasil.
+
+Catatan: **blok hitam paling aman**. Blur dan pixel menyisakan pola samar yang
+secara teori masih bisa diserang untuk teks pendek berformat tetap seperti NIK.
+
+Deteksi otomatis (OCR) belum ada — semua sensor dilakukan manual. Ini disengaja:
+deteksi otomatis yang meleset satu angka lebih berbahaya daripada tidak ada
+sama sekali, karena membuat orang berhenti memeriksa.
 
 ## Teknis
 
