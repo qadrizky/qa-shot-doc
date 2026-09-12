@@ -1,0 +1,4 @@
+# hasil export & file uji — jangan ikut ter-commit
+*.pdf
+*.docx
+.DS_Store
