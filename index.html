@@ -467,7 +467,11 @@ function(r){"object"==typeof e&&void 0!==t?t.exports=r():"function"==typeof defi
   .main{display:flex;flex:1;min-height:0}
   aside{width:262px;flex:0 0 262px;background:var(--panel);border-right:1px solid var(--line);
     overflow-y:auto;padding:14px}
-  .work{flex:1;min-width:0;display:flex;flex-direction:column}
+  /* min-height:0 wajib: sebagai flex item di container kolom (.main saat layar sempit)
+     nilai bawaan min-height:auto membuat .work menolak mengecil di bawah tinggi
+     kontennya, sehingga .stage tidak pernah kekurangan ruang, overflow:auto-nya tidak
+     pernah aktif, dan sisa halaman terpotong body{overflow:hidden}. */
+  .work{flex:1;min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column}
   .modebar{flex:0 0 auto;padding:10px 14px 0;display:flex;gap:10px;align-items:center}
   .modebar .seg{max-width:340px}
   .stage{flex:1;min-height:0;overflow:auto;padding:22px;position:relative}
