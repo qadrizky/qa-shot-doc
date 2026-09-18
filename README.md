@@ -8,36 +8,30 @@ satu gambar bisa memakan satu halaman penuh.
 
 ## Cara pakai
 
-1. **Upload** — pilih banyak gambar sekaligus, drag & drop ke area kerja, atau
-   tempel langsung dari clipboard dengan `⌘V` / `Ctrl+V`.
-2. **Atur** — jumlah gambar per baris, jarak antar gambar, margin, ukuran dan
-   orientasi halaman. Ukuran gambar menyesuaikan otomatis.
-   - seret gambar untuk mengubah urutan, atau pakai tombol ◀ ▶
-   - klik area caption untuk mengetik keterangan tiap langkah
-   - header dokumen, penomoran step, caption, dan bingkai bisa dimatikan
-3. **Sensor data sensitif** — tombol *Sensor data* pada tiap gambar membuka
-   editor layar penuh. Seret pada gambar untuk menutup area yang memuat NIK,
-   tanggal/tempat lahir, nama ibu kandung, foto KTP, atau data lain. Tersedia
-   tiga gaya: blok merah, blur, dan pixel. Kotak yang sudah dibuat bisa
-   **digeser** dan **diubah ukurannya** lewat pegangan di sudut kanan bawah.
-4. **Export** — tombol *Export PDF* atau *Export DOCX*.
+1. **Tambah screenshot.** Pilih beberapa sekaligus, tarik ke halaman, atau tempel
+   dengan `Ctrl+V` / `⌘V`.
+2. **Sensor otomatis (opsional).** Buka panel Pengaturan, centang data yang mau
+   disensor, lalu klik **Pindai screenshot**. Lihat bagian *Sensor otomatis* di bawah.
+3. **Susun.** Atur jumlah screenshot per baris, jarak, margin, ukuran kertas, dan
+   orientasi. Ukuran screenshot menyesuaikan sendiri.
+   - tarik pegangan ⠿ untuk mengubah urutan, atau pakai tombol ↑ ↓
+   - tulis keterangan tiap langkah di kolom keterangan
+   - judul & info tes, nomor langkah, keterangan, dan garis tepi bisa dimatikan
+4. **Sensor manual.** Tombol **Sensor** di tiap screenshot membuka editor layar
+   penuh. Tarik di atas gambar untuk menutup bagian yang mau disensor. Pilihannya
+   blok merah, blur, atau piksel. Kotak bisa digeser dan diubah ukurannya lewat
+   sudut kanan bawah.
+5. **Unduh** sebagai PDF atau DOCX.
 
-Preview di layar adalah WYSIWYG: pembagian halaman yang terlihat sama persis
-dengan hasil PDF.
-
-### Mengubah urutan
-
-Seret pegangan ⠿ di sisi kiri kartu untuk menyusun ulang (jalan di mouse maupun
-sentuh; daftar ikut menggulir saat ditarik ke tepi). Di tampilan kertas, gambar
-bisa diseret langsung. Tombol ↑ ↓ tetap tersedia.
+Tampilan **Pratinjau** sama persis dengan hasil PDF, termasuk pembagian
+halamannya.
 
 ### Di HP
 
-Pada layar di bawah 820px tampilan otomatis berpindah ke **mode daftar**:
-tiap gambar jadi satu kartu berisi thumbnail, kolom keterangan berukuran
-normal, dan tombol urutan/sensor/hapus. Tombol *Pratinjau halaman* menampilkan
-hasil susunan kertasnya. Tombol export menempel di bawah agar terjangkau jempol.
-Pilihan mode yang kamu tekan sendiri tidak akan ditimpa saat ukuran layar berubah.
+Di layar kecil, tampilan pindah ke mode **Susun**: tiap screenshot jadi satu kartu
+berisi gambar kecil, kolom keterangan, dan tombol urutan/sensor/hapus. Pengaturan
+ada di tombol **Pengaturan**, dan tombol unduh ada di bagian bawah layar supaya
+mudah dijangkau.
 
 ## Privasi
 
@@ -64,8 +58,20 @@ secara teori masih bisa diserang untuk teks pendek berformat tetap seperti NIK.
 
 ## Sensor otomatis
 
-Toggle **Sensor otomatis** di panel pengaturan menyalakan deteksi, dan checklist
-menentukan apa saja yang ditutup. Checklist dibagi dua:
+Alurnya: **centang dulu, baru pindai.**
+
+1. Di panel Pengaturan, bagian *Sensor otomatis*, centang data yang mau disensor.
+2. Klik **Pindai screenshot**. Semua screenshot dipindai lalu disensor sesuai
+   centangan.
+3. Kalau centangan diubah setelahnya, perubahan belum berlaku sampai tombol
+   (sekarang bertuliskan **Terapkan**) diklik. Menerapkan pilihan baru tidak
+   memindai ulang, jadi hasilnya langsung muncul.
+4. Screenshot yang ditambahkan belakangan tidak dipindai diam-diam. Tombolnya
+   berubah jadi **Pindai N screenshot baru**.
+5. **Hapus hasil sensor otomatis** membuang semua kotak dari sensor otomatis.
+   Sensor manual tidak ikut terhapus.
+
+Checklist dibagi dua:
 
 **Foto** — ditutup penuh sesuai batas fotonya:
 
@@ -129,10 +135,9 @@ gambar kartu debit juga tampak bertekstur. Foto asli punya porsi gradasi besar d
 palet warna yang tersebar; ilustrasi tersusun dari sedikit warna rata. Foto yang
 buram (misalnya wajah di layar verifikasi) dideteksi lewat jalur terpisah.
 
-Hasil analisis disimpan per gambar, jadi mengubah checklist berlaku seketika
-tanpa memindai ulang. Mematikan toggle hanya menghapus kotak otomatis — kotak
-manual tetap. Kotak otomatis yang kamu geser atau ubah ukurannya berubah status
-jadi manual, supaya tidak ikut terhapus saat toggle dimatikan.
+Hasil pindaian disimpan per screenshot selama halaman terbuka. Kotak otomatis
+yang kamu geser atau ubah ukurannya berubah status jadi manual, supaya tidak ikut
+terhapus oleh *Hapus hasil sensor otomatis*.
 
 Semuanya berjalan lokal: Tesseract di-host sendiri di `vendor/tesseract/`,
 tidak ada gambar yang dikirim ke layanan mana pun. Unduhan pertama sekitar
@@ -192,8 +197,8 @@ yang lolos lebih berbahaya daripada tidak ada deteksi sama sekali, karena membua
 orang berhenti memeriksa. Sensor manual selalu tersedia sebagai jaring pengaman.
 
 Fitur ini perlu halaman yang dibuka lewat **http/https**. Saat `index.html`
-dibuka langsung dari disk (`file://`), browser memblokir worker OCR sehingga
-toggle-nya dimatikan; sensor manual tetap berfungsi.
+dibuka langsung dari disk (`file://`), browser memblokir pemindainya sehingga
+tombol Pindai dinonaktifkan; sensor manual tetap berfungsi.
 
 ## Teknis
 
@@ -209,8 +214,8 @@ diblokir jaringan kantor:
 Untuk memperbarui library: unduh file di atas, lalu ganti isi tag `<script>`
 yang bersangkutan di bagian atas `index.html`.
 
-Tesseract dipakai untuk sensor otomatis dan dimuat hanya saat toggle-nya
-dinyalakan, dari `vendor/tesseract/` (tesseract.js 5.1.1, core LSTM varian SIMD
+Tesseract dipakai untuk sensor otomatis dan baru dimuat saat tombol Pindai
+diklik pertama kali, dari `vendor/tesseract/` (tesseract.js 5.1.1, core LSTM varian SIMD
 dan non-SIMD, serta `eng.traineddata` dari tessdata_fast).
 
 ### Catatan format
@@ -220,5 +225,5 @@ dan non-SIMD, serta `eng.traineddata` dari tessdata_fast).
   DOCX tetap Unicode penuh.
 - **DOCX** mengikuti alur halaman Word, jadi posisi page break bisa sedikit
   berbeda dari PDF. Jumlah kolom, ukuran gambar, dan isi tetap sama.
-- Kualitas export bisa dipilih: 150 DPI, 220 DPI, atau gambar asli tanpa
-  kompresi.
+- Kualitas gambar bisa dipilih: Normal (150 DPI), Tinggi (220 DPI), atau Asli
+  tanpa kompresi.

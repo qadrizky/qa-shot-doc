@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>QA Shot Doc — Screenshot ke PDF / DOCX</title>
+<title>QA Shot Doc</title>
 <!-- jsPDF 2.5.1 — disatukan ke dalam file ini supaya tetap jalan tanpa CDN.
      Sumber asli: https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js -->
 <script>
@@ -536,7 +536,7 @@ function(r){"object"==typeof e&&void 0!==t?t.exports=r():"function"==typeof defi
   .tools button.del:hover{background:var(--danger)}
   .cap{position:absolute;color:#3c4149;font-family:Helvetica,Arial,sans-serif;outline:0;
     white-space:pre-wrap;overflow:hidden;word-wrap:break-word}
-  .cap:empty:before{content:"Keterangan…";color:#b3b9c2}
+  .cap:empty:before{content:"Tulis keterangan";color:#b3b9c2}
   .cap:focus{background:#eef4ff}
   .capnum{position:absolute;color:#3c4149;font-family:Helvetica,Arial,sans-serif;pointer-events:none}
   .hdr{position:absolute;color:#14171c;font-family:Helvetica,Arial,sans-serif}
@@ -568,9 +568,10 @@ function(r){"object"==typeof e&&void 0!==t?t.exports=r():"function"==typeof defi
   .tag{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:999px;font-size:11px;
     font-weight:600;background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}
   .tag.none{background:var(--panel-2);color:var(--muted)}
+  .tag{white-space:nowrap}
   .tag.auto{background:color-mix(in srgb,#f59e0b 20%,transparent);color:#b45309}
   @media (prefers-color-scheme: dark){ .tag.auto{color:#fbbf24} }
-  .cats{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:0 12px;margin:4px 0 2px}
+  .cats{display:grid;grid-template-columns:repeat(auto-fit,minmax(108px,1fr));gap:0 10px;margin:4px 0 2px}
   .cats .chk{margin-bottom:6px;font-size:13px}
   .catgrp{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:10px 0 4px;
     font-size:11px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
@@ -583,6 +584,7 @@ function(r){"object"==typeof e&&void 0!==t?t.exports=r():"function"==typeof defi
   .rdbar{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#14171c;
     border-bottom:1px solid #2a2f37;flex-wrap:wrap;flex:0 0 auto}
   .rdbar .seg{background:#1c1f25;border-color:#2a2f37}
+  .rdbar .seg button{white-space:nowrap;padding:7px 10px}
   .rdbar .btn{background:#1c1f25;border-color:#2a2f37;color:#e8eaee}
   .rdwrap{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:12px;overflow:auto}
   .rdstage{position:relative;touch-action:none;-webkit-user-select:none;user-select:none;line-height:0;
@@ -610,7 +612,8 @@ function(r){"object"==typeof e&&void 0!==t?t.exports=r():"function"==typeof defi
   .veil.on{display:grid}
   .veil .box{background:var(--panel);padding:20px 26px;border-radius:12px;box-shadow:var(--shadow);font-weight:550}
   .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#14171c;color:#fff;
-    padding:9px 16px;border-radius:8px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:95;font-size:13px}
+    padding:9px 16px;border-radius:8px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:95;font-size:13px;
+    width:max-content;max-width:calc(100vw - 32px);text-align:center}
   .toast.on{opacity:1}
 
   /* ---------- layar sempit ---------- */
@@ -637,34 +640,65 @@ function(r){"object"==typeof e&&void 0!==t?t.exports=r():"function"==typeof defi
 <body>
 <div class="app">
   <header class="bar">
-    <div class="brand"><span class="dot"></span>QA Shot Doc <small class="hide-sm">screenshot → PDF / DOCX</small></div>
-    <button class="btn" id="bAdd">+ Tambah</button>
-    <button class="btn ghost hide-sm" id="bClear">Kosongkan</button>
+    <div class="brand"><span class="dot"></span>QA Shot Doc <small class="hide-sm">susun screenshot jadi dokumen</small></div>
+    <button class="btn" id="bAdd">+ Tambah<span class="hide-sm"> screenshot</span></button>
+    <button class="btn ghost hide-sm" id="bClear">Hapus semua</button>
     <button class="btn ghost" id="bPanel" hidden>Pengaturan</button>
     <span class="spacer"></span>
     <span class="hint hide-sm" id="count"></span>
-    <button class="btn hide-sm" id="bDocx">Export DOCX</button>
-    <button class="btn primary hide-sm" id="bPdf">Export PDF</button>
+    <button class="btn hide-sm" id="bDocx">Unduh DOCX</button>
+    <button class="btn primary hide-sm" id="bPdf">Unduh PDF</button>
   </header>
 
   <div class="main">
     <aside id="panel">
+      <div class="grp" id="autoGrp">
+        <h3>Sensor otomatis</h3>
+        <p class="hint" style="margin:0 0 6px">Centang data yang mau disensor, lalu klik Pindai.</p>
+        <div class="catgrp"><span>Foto</span>
+          <span class="catact"><button type="button" class="linkbtn" data-all="1">Pilih semua</button> ·
+            <button type="button" class="linkbtn" data-all="0">Kosongkan</button></span></div>
+        <div class="cats">
+          <label class="chk"><input type="checkbox" data-cat="ktpPhoto" checked> Foto KTP</label>
+          <label class="chk"><input type="checkbox" data-cat="selfie" checked> Foto selfie</label>
+          <label class="chk"><input type="checkbox" data-cat="otherPhoto"> Foto lainnya</label>
+        </div>
+        <div class="catgrp"><span>Data</span></div>
+        <div class="cats">
+          <label class="chk"><input type="checkbox" data-cat="nik" checked> NIK</label>
+          <label class="chk"><input type="checkbox" data-cat="pob" checked> Tempat lahir</label>
+          <label class="chk"><input type="checkbox" data-cat="dob" checked> Tanggal lahir</label>
+          <label class="chk"><input type="checkbox" data-cat="mother" checked> Nama ibu kandung</label>
+          <label class="chk"><input type="checkbox" data-cat="name" checked> Nama</label>
+          <label class="chk"><input type="checkbox" data-cat="npwp" checked> NPWP</label>
+          <label class="chk"><input type="checkbox" data-cat="phone" checked> No. HP</label>
+          <label class="chk"><input type="checkbox" data-cat="email" checked> Email</label>
+          <label class="chk"><input type="checkbox" data-cat="password" checked> Password</label>
+          <label class="chk"><input type="checkbox" data-cat="account"> No. rekening/kartu</label>
+          <label class="chk"><input type="checkbox" data-cat="address"> Alamat</label>
+        </div>
+        <button class="btn primary" id="bAutoRun" style="width:100%;margin-top:6px">Pindai screenshot</button>
+        <p class="hint" id="autoStatus" style="margin:7px 0 0"></p>
+        <button type="button" class="linkbtn" id="bAutoClear" hidden style="margin-top:6px">Hapus hasil sensor otomatis</button>
+        <p class="hint" id="autoHint" style="margin:9px 0 0"></p>
+      </div>
+
       <div class="grp">
-        <h3>Layout</h3>
-        <div class="row"><label for="cols">Gambar per baris</label><span class="val" id="vCols">2</span></div>
+        <h3>Tata letak</h3>
+        <div class="row"><label for="cols">Screenshot per baris</label><span class="val" id="vCols">2</span></div>
         <input type="range" id="cols" min="1" max="8" step="1" value="2">
-        <div class="row" style="margin-top:10px"><label for="gap">Jarak antar gambar</label><span class="val" id="vGap">4 mm</span></div>
+        <div class="row" style="margin-top:10px"><label for="gap">Jarak antar screenshot</label><span class="val" id="vGap">4 mm</span></div>
         <input type="range" id="gap" min="0" max="20" step="1" value="4">
-        <div class="row" style="margin-top:10px"><label for="margin">Margin halaman</label><span class="val" id="vMargin">12 mm</span></div>
+        <div class="row" style="margin-top:10px"><label for="margin">Margin kertas</label><span class="val" id="vMargin">12 mm</span></div>
         <input type="range" id="margin" min="5" max="30" step="1" value="12">
       </div>
 
       <div class="grp">
-        <h3>Halaman</h3>
+        <h3>Kertas</h3>
         <select id="size">
-          <option value="a4">A4 (210 × 297 mm)</option>
-          <option value="letter">Letter (216 × 279 mm)</option>
-          <option value="a5">A5 (148 × 210 mm)</option>
+          <option value="a4">A4</option>
+          <option value="letter">Letter</option>
+          <option value="a5">A5</option>
         </select>
         <div class="row" style="margin-top:10px"><label>Orientasi</label></div>
         <div class="seg" id="orient">
@@ -674,77 +708,45 @@ function(r){"object"==typeof e&&void 0!==t?t.exports=r():"function"==typeof defi
       </div>
 
       <div class="grp">
-        <h3>Isi dokumen</h3>
-        <label class="chk"><input type="checkbox" id="oHeader" checked> Header dokumen</label>
-        <label class="chk"><input type="checkbox" id="oNum" checked> Penomoran step otomatis</label>
-        <label class="chk"><input type="checkbox" id="oCap" checked> Caption per gambar</label>
-        <label class="chk"><input type="checkbox" id="oBorder" checked> Bingkai tipis gambar</label>
+        <h3>Tampilkan di dokumen</h3>
+        <label class="chk"><input type="checkbox" id="oHeader" checked> Judul &amp; info tes</label>
+        <label class="chk"><input type="checkbox" id="oNum" checked> Nomor langkah</label>
+        <label class="chk"><input type="checkbox" id="oCap" checked> Keterangan</label>
+        <label class="chk"><input type="checkbox" id="oBorder" checked> Garis tepi screenshot</label>
       </div>
 
       <div class="grp fields" id="metaBox">
-        <h3>Header</h3>
-        <input type="text" id="mTitle" placeholder="Judul dokumen">
-        <input type="text" id="mTester" placeholder="Tester">
+        <h3>Info tes</h3>
+        <input type="text" id="mTitle" placeholder="Judul, mis. TC-01 Login">
+        <input type="text" id="mTester" placeholder="Nama tester">
         <input type="date" id="mDate">
-        <input type="text" id="mDevice" placeholder="Device / OS">
-        <input type="text" id="mBuild" placeholder="Build / versi">
+        <input type="text" id="mDevice" placeholder="Perangkat &amp; OS, mis. Samsung A54, Android 14">
+        <input type="text" id="mBuild" placeholder="Versi aplikasi">
       </div>
 
       <div class="grp">
-        <h3>Sensor otomatis</h3>
-        <label class="chk"><input type="checkbox" id="oAuto"> Deteksi &amp; sensor otomatis (OCR)</label>
-        <div id="autoBox" hidden>
-          <div class="catgrp"><span>Foto</span>
-            <span class="catact"><button type="button" class="linkbtn" data-all="1">Pilih semua</button> ·
-              <button type="button" class="linkbtn" data-all="0">Kosongkan</button></span></div>
-          <div class="cats">
-            <label class="chk"><input type="checkbox" data-cat="ktpPhoto" checked> Foto KTP</label>
-            <label class="chk"><input type="checkbox" data-cat="selfie" checked> Foto selfie / wajah</label>
-            <label class="chk"><input type="checkbox" data-cat="otherPhoto"> Semua foto lain</label>
-          </div>
-          <div class="catgrp"><span>Data teks</span></div>
-          <div class="cats">
-            <label class="chk"><input type="checkbox" data-cat="nik" checked> NIK</label>
-            <label class="chk"><input type="checkbox" data-cat="pob" checked> Tempat lahir</label>
-            <label class="chk"><input type="checkbox" data-cat="dob" checked> Tanggal lahir</label>
-            <label class="chk"><input type="checkbox" data-cat="mother" checked> Nama ibu kandung</label>
-            <label class="chk"><input type="checkbox" data-cat="name" checked> Nama lengkap</label>
-            <label class="chk"><input type="checkbox" data-cat="npwp" checked> NPWP</label>
-            <label class="chk"><input type="checkbox" data-cat="phone" checked> No. HP</label>
-            <label class="chk"><input type="checkbox" data-cat="email" checked> Email</label>
-            <label class="chk"><input type="checkbox" data-cat="password" checked> Password</label>
-            <label class="chk"><input type="checkbox" data-cat="account"> No. rekening / kartu</label>
-            <label class="chk"><input type="checkbox" data-cat="address"> Alamat</label>
-          </div>
-          <button class="btn sm" id="bRescan" style="margin-top:4px">Pindai ulang semua</button>
-        </div>
-        <p class="hint" id="autoHint" style="margin:9px 0 0"></p>
-      </div>
-
-      <div class="grp">
-        <h3>Kualitas export</h3>
+        <h3>Kualitas gambar</h3>
         <select id="dpi">
-          <option value="150">Normal — 150 DPI (file kecil)</option>
-          <option value="220" selected>Tinggi — 220 DPI (teks tajam)</option>
-          <option value="orig">Asli — tanpa kompresi (file besar)</option>
+          <option value="150">Normal (file lebih kecil)</option>
+          <option value="220" selected>Tinggi (teks lebih tajam)</option>
+          <option value="orig">Asli (tanpa kompresi, file besar)</option>
         </select>
-        <p class="hint" style="margin:9px 0 0">Semua proses berjalan di browser. Gambar tidak pernah dikirim ke server mana pun.</p>
       </div>
     </aside>
 
     <div class="work">
       <div class="modebar" id="modebar" hidden>
         <div class="seg" id="viewSeg">
-          <button data-v="list" aria-pressed="false">Daftar &amp; edit</button>
-          <button data-v="page" aria-pressed="true">Pratinjau halaman</button>
+          <button data-v="list" aria-pressed="false">Susun</button>
+          <button data-v="page" aria-pressed="true">Pratinjau</button>
         </div>
       </div>
       <div class="stage" id="stage">
         <div class="drop" id="drop">
-          <h2>Taruh screenshot di sini</h2>
-          <p>Pilih banyak file sekaligus, drag &amp; drop, atau tempel dengan ⌘V.<br>
-             Semua diproses di browser — tidak ada gambar yang diupload ke mana pun.</p>
-          <button class="btn primary" id="bPick">Pilih gambar</button>
+          <h2>Tarik screenshot ke sini</h2>
+          <p>Bisa beberapa sekaligus, atau tempel dengan Ctrl/⌘ + V.<br>
+             Screenshot tidak diunggah ke server.</p>
+          <button class="btn primary" id="bPick">Pilih screenshot</button>
         </div>
         <div id="pages"></div>
         <div id="cards"></div>
@@ -754,8 +756,8 @@ function(r){"object"==typeof e&&void 0!==t?t.exports=r():"function"==typeof defi
 
   <div class="bottombar">
     <span class="hint" id="countSm" style="flex:0 0 auto"></span>
-    <button class="btn" id="bDocxSm">DOCX</button>
-    <button class="btn primary" id="bPdfSm">PDF</button>
+    <button class="btn" id="bDocxSm">Unduh DOCX</button>
+    <button class="btn primary" id="bPdfSm">Unduh PDF</button>
   </div>
 </div>
 
@@ -765,10 +767,10 @@ function(r){"object"==typeof e&&void 0!==t?t.exports=r():"function"==typeof defi
     <div class="seg" id="rdStyle" style="max-width:290px">
       <button data-v="red" aria-pressed="true">Blok merah</button>
       <button data-v="blur" aria-pressed="false">Blur</button>
-      <button data-v="pixel" aria-pressed="false">Pixel</button>
+      <button data-v="pixel" aria-pressed="false">Piksel</button>
     </div>
     <span class="spacer"></span>
-    <button class="btn" id="rdUndo">Undo</button>
+    <button class="btn" id="rdUndo">Urungkan</button>
     <button class="btn" id="rdClear">Hapus semua</button>
     <button class="btn primary" id="rdSave">Simpan</button>
   </div>
@@ -777,8 +779,8 @@ function(r){"object"==typeof e&&void 0!==t?t.exports=r():"function"==typeof defi
 </div>
 
 <input type="file" id="file" accept="image/*" multiple hidden>
-<div class="veil" id="veil"><div class="box"><span id="veilText">Menyiapkan…</span>
-  <button class="btn" id="veilCancel" hidden style="margin-left:14px">Batalkan</button></div></div>
+<div class="veil" id="veil"><div class="box"><span id="veilText">Memproses…</span>
+  <button class="btn" id="veilCancel" hidden style="margin-left:14px">Batal</button></div></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -802,7 +804,8 @@ const S = {
   viewLocked: false,       // true setelah pengguna memilih mode sendiri
   opts: { cols:2, gap:4, margin:12, size:'a4', orient:'portrait',
           header:true, num:true, cap:true, border:true, dpi:'220' },
-  auto: { on:false, cats:{ ktpPhoto:true, selfie:true, otherPhoto:false,
+  // cats = pilihan di checklist; applied = pilihan yang dipakai saat terakhir klik Pindai/Terapkan
+  auto: { on:false, applied:null, cats:{ ktpPhoto:true, selfie:true, otherPhoto:false,
                            nik:true, pob:true, dob:true, mother:true, name:true,
                            npwp:true, phone:true, email:true, password:true, account:false, address:false } },
   meta: { title:'', tester:'', date:'', device:'', build:'' }
@@ -876,8 +879,8 @@ function metaLines(){
   const m = S.meta, out = [];
   if(m.tester) out.push('Tester: '+m.tester);
   if(m.date)   out.push('Tanggal: '+m.date);
-  if(m.device) out.push('Device/OS: '+m.device);
-  if(m.build)  out.push('Build: '+m.build);
+  if(m.device) out.push('Perangkat: '+m.device);
+  if(m.build)  out.push('Versi aplikasi: '+m.build);
   return out;
 }
 function headerH(){
@@ -1007,12 +1010,13 @@ function render(){
   const has = S.items.length > 0;
   const mob = isMobile();
   $('#drop').style.display  = has ? 'none' : '';
-  $('#count').textContent   = has ? S.items.length + ' gambar' : '';
-  $('#countSm').textContent = has ? S.items.length + ' gbr' : '';
+  $('#count').textContent   = has ? S.items.length + ' screenshot' : '';
+  $('#countSm').textContent = has ? S.items.length + ' screenshot' : '';
   $('#modebar').hidden = !has;
   $('#bPanel').hidden = !mob;
   if(!mob) $('#panel').classList.remove('open');
   ['#bPdf','#bDocx','#bPdfSm','#bDocxSm'].forEach(s=>{ $(s).disabled = !has; });
+  if(typeof updateAutoUI === 'function') updateAutoUI();
 
   const pagesBox = $('#pages'), cardsBox = $('#cards');
   const listMode = S.view === 'list';
@@ -1085,9 +1089,9 @@ function shotNode(b){
   box.appendChild(img);
 
   const tools = el('div','tools');
-  tools.appendChild(mkBtn('◀','Geser kiri',  e=>{ e.stopPropagation(); move(b.idx,-1); }));
-  tools.appendChild(mkBtn('▶','Geser kanan', e=>{ e.stopPropagation(); move(b.idx, 1); }));
-  const red = mkBtn(hasRed(b.item) ? '■'+b.item.red.length : '■', 'Sensor data',
+  tools.appendChild(mkBtn('◀','Geser ke kiri',  e=>{ e.stopPropagation(); move(b.idx,-1); }));
+  tools.appendChild(mkBtn('▶','Geser ke kanan', e=>{ e.stopPropagation(); move(b.idx, 1); }));
+  const red = mkBtn(hasRed(b.item) ? '■'+b.item.red.length : '■', 'Sensor',
     e=>{ e.stopPropagation(); openRedactor(b.idx); });
   tools.appendChild(red);
   const del = mkBtn('✕','Hapus', e=>{ e.stopPropagation(); removeAt(b.idx); });
@@ -1149,7 +1153,7 @@ function renderCards(wrap){
     card._item = it;                       // dipakai saat menyusun ulang setelah drag
 
     const grip = el('div','grip');
-    grip.textContent = '⠿'; grip.title = 'Seret untuk mengubah urutan';
+    grip.textContent = '⠿'; grip.title = 'Tarik untuk mengubah urutan';
     card.appendChild(grip);
 
     const th = el('div','thumb');
@@ -1163,20 +1167,20 @@ function renderCards(wrap){
     const nAuto = (it.red||[]).filter(b=>b.auto).length;
     const tag  = el('span', 'tag' + (hasRed(it) ? (nAuto ? ' auto' : '') : ' none'));
     tag.textContent = hasRed(it)
-      ? it.red.length + ' area disensor' + (nAuto ? ' · ' + nAuto + ' otomatis' : '')
-      : 'belum disensor';
+      ? it.red.length + ' disensor' + (nAuto ? ' (' + nAuto + ' otomatis)' : '')
+      : 'Belum disensor';
     head.appendChild(num); head.appendChild(nm); head.appendChild(el('span','spacer')); head.appendChild(tag);
     body.appendChild(head);
 
     const ta = el('textarea','ccap');
-    ta.placeholder = 'Keterangan langkah…'; ta.value = it.caption || '';
+    ta.placeholder = 'Tulis keterangan, mis. langkah tes atau hasilnya'; ta.value = it.caption || '';
     ta.addEventListener('input', ()=>{ it.caption = ta.value.replace(/\n/g,' '); });
     body.appendChild(ta);
 
     const act = el('div','cact');
-    act.appendChild(mkBtn2('↑ Naik',  ()=>move(i,-1), i === 0));
-    act.appendChild(mkBtn2('↓ Turun', ()=>move(i, 1), i === S.items.length-1));
-    act.appendChild(mkBtn2('Sensor data', ()=>openRedactor(i)));
+    act.appendChild(mkBtn2('↑ Naikkan',  ()=>move(i,-1), i === 0));
+    act.appendChild(mkBtn2('↓ Turunkan', ()=>move(i, 1), i === S.items.length-1));
+    act.appendChild(mkBtn2('Sensor', ()=>openRedactor(i)));
     const d = mkBtn2('Hapus', ()=>removeAt(i)); d.style.marginLeft = 'auto';
     act.appendChild(d);
     body.appendChild(act);
@@ -1275,8 +1279,8 @@ function closeRedactor(save){
   if(save && it){
     it.red = RD.boxes.slice();
     it._rev = (it._rev || 0) + 1;
-    toast(it.red.length ? it.red.length + ' area disensor pada gambar ' + (RD.idx+1)
-                        : 'Sensor dihapus dari gambar ' + (RD.idx+1));
+    toast(it.red.length ? 'Screenshot ' + (RD.idx+1) + ': ' + it.red.length + ' bagian disensor'
+                        : 'Screenshot ' + (RD.idx+1) + ': sensor dihapus');
   }
   RD.idx = -1; RD.boxes = []; RD.drag = null;
   $('#rd').hidden = true;
@@ -1304,20 +1308,21 @@ function paintRedactor(opts){
   RD.boxes.forEach((b,i)=>{
     const d = el('div','rdbox' + (b.auto ? ' auto' : '') + (i === o.exclude ? ' moving' : ''));
     d.dataset.i = i;
-    d.title = b.auto ? 'Terdeteksi otomatis — seret untuk menggeser' : 'Seret untuk menggeser';
+    d.title = b.auto ? 'Dari sensor otomatis. Geser untuk memindahkan' : 'Geser untuk memindahkan';
     setBoxStyle(d, b);
-    const x = el('button','x'); x.type='button'; x.textContent='✕'; x.title='Hapus kotak ini';
+    const x = el('button','x'); x.type='button'; x.textContent='✕'; x.title='Hapus kotak';
     x.addEventListener('click', e=>{ e.stopPropagation(); RD.boxes.splice(i,1); paintRedactor(); });
     const rz = el('button','rz'); rz.type='button'; rz.title='Ubah ukuran';
     d.appendChild(x); d.appendChild(rz);
     stage.appendChild(d);
   });
   const auto = RD.boxes.filter(b=>b.auto).length;
+  const soft = RD.boxes.some(b => b.s === 'blur' || b.s === 'pixel');
   $('#rdFoot').textContent = RD.boxes.length
-    ? RD.boxes.length + ' area ditutup' + (auto ? ' (' + auto + ' terdeteksi otomatis)' : '')
-      + '. Seret kotak untuk menggeser, tarik sudutnya untuk mengubah ukuran. '
-      + 'Blok solid paling aman — blur dan pixel tetap menyisakan pola samar.'
-    : 'Seret pada gambar untuk menutup area yang berisi data sensitif (NIK, tanggal lahir, nama ibu kandung, foto KTP, dll).';
+    ? RD.boxes.length + ' kotak sensor' + (auto ? ' (' + auto + ' dari sensor otomatis)' : '')
+      + '. Geser kotak untuk memindahkan, tarik sudut kanan bawah untuk mengubah ukuran.'
+      + (soft ? ' Blur dan piksel masih bisa terbaca samar, pakai blok merah untuk data penting.' : '')
+    : 'Tarik di atas gambar untuk menutup bagian yang mau disensor.';
   $('#rdUndo').disabled = $('#rdClear').disabled = !RD.boxes.length;
 }
 function buildPreview(item, boxes){
@@ -1427,7 +1432,7 @@ async function addFiles(list){
   const files = [...list].filter(f=>f.type.startsWith('image/'));
   if(!files.length) return;
   files.sort((a,b)=>a.name.localeCompare(b.name, undefined, {numeric:true, sensitivity:'base'}));
-  veil(true, 'Memuat ' + files.length + ' gambar…');
+  veil(true, 'Memuat ' + files.length + ' screenshot…');
   await yieldUI();
   for(const f of files){
     try{
@@ -1438,8 +1443,8 @@ async function addFiles(list){
     }catch(err){ console.warn('Gagal memuat', f.name, err); }
   }
   veil(false); render();
-  toast(files.length + ' gambar ditambahkan');
-  if(S.auto.on) scanAll(false);         // gambar baru ikut dipindai
+  // Screenshot baru tidak dipindai diam-diam: pengguna yang memutuskan lewat tombol Pindai.
+  toast(files.length + ' screenshot ditambahkan');
 }
 
 /* ====================== sensor otomatis (OCR + foto) ======================
@@ -2106,11 +2111,11 @@ async function scanAll(force){
   _scanning = true; _cancel = false;
   $('#veilCancel').hidden = false;
   try{
-    veil(true, 'Menyiapkan OCR…'); await yieldUI();
+    veil(true, 'Menyiapkan pemindai…'); await yieldUI();
     const wk = await getWorker();
     for(let i=0; i<todo.length; i++){
       if(_cancel) break;
-      veil(true, 'Memindai gambar ' + (i+1) + ' dari ' + todo.length + '…'); await yieldUI();
+      veil(true, 'Memindai ' + (i+1) + ' dari ' + todo.length + ' screenshot…'); await yieldUI();
       const it = todo[i], c = ocrCanvas(it);
       const { data } = await wk.recognize(c);
       it._ocr = { w:c.width, h:c.height,
@@ -2122,7 +2127,7 @@ async function scanAll(force){
     }
   }catch(err){
     console.error(err);
-    toast('OCR gagal dimuat: ' + err.message);
+    toast('Pemindai gagal dimuat. Coba muat ulang halaman.');
   }finally{
     _scanning = false; $('#veilCancel').hidden = true; veil(false);
   }
@@ -2137,7 +2142,7 @@ function applyAuto(report){
   if(S.auto.on){
     for(const it of S.items){
       if(!it._ocr) continue;
-      const f = detect(it, S.auto.cats);
+      const f = detect(it, S.auto.applied || S.auto.cats);
       per.set(it, f);
       for(const b of f){
         if(!b.val || !PROPAGATE.includes(b.cat)) continue;
@@ -2161,8 +2166,8 @@ function applyAuto(report){
   });
   render();
   if(report){
-    toast(total ? total + ' area terdeteksi di ' + imgs + ' gambar — periksa lagi sebelum export'
-                : 'Tidak ada data sensitif yang terdeteksi');
+    toast(total ? total + ' bagian disensor di ' + imgs + ' screenshot. Cek lagi sebelum diunduh.'
+                : 'Tidak ada data yang cocok dengan pilihanmu.');
   }
 }
 
@@ -2207,8 +2212,8 @@ function fileBase(){
 /* ====================== export PDF ====================== */
 async function exportPDF(){
   if(!S.items.length) return;
-  if(!window.jspdf){ toast('Library PDF gagal dimuat.'); return; }
-  veil(true, 'Menyusun PDF…'); await yieldUI();
+  if(!window.jspdf){ toast('PDF tidak bisa dibuat. Coba muat ulang halaman.'); return; }
+  veil(true, 'Membuat PDF…'); await yieldUI();
   try{
     const { jsPDF } = window.jspdf;
     const [pw,ph] = pageDims();
@@ -2246,17 +2251,17 @@ async function exportPDF(){
       await yieldUI();
     }
     doc.save(fileBase() + '.pdf');
-    toast('PDF tersimpan');
+    toast('PDF sudah diunduh');
   }catch(err){
-    console.error(err); toast('Gagal membuat PDF: ' + err.message);
+    console.error(err); toast('PDF gagal dibuat. Coba lagi.');
   }finally{ veil(false); }
 }
 
 /* ====================== export DOCX ====================== */
 async function exportDOCX(){
   if(!S.items.length) return;
-  if(!window.docx){ toast('Library DOCX gagal dimuat.'); return; }
-  veil(true, 'Menyusun DOCX…'); await yieldUI();
+  if(!window.docx){ toast('DOCX tidak bisa dibuat. Coba muat ulang halaman.'); return; }
+  veil(true, 'Membuat DOCX…'); await yieldUI();
   try{
     const D = window.docx;
     const o = S.opts, [pw,ph] = pageDims();
@@ -2341,9 +2346,9 @@ async function exportDOCX(){
     const a = el('a'); a.href = URL.createObjectURL(blob); a.download = fileBase() + '.docx';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
-    toast('DOCX tersimpan');
+    toast('DOCX sudah diunduh');
   }catch(err){
-    console.error(err); toast('Gagal membuat DOCX: ' + err.message);
+    console.error(err); toast('DOCX gagal dibuat. Coba lagi.');
   }finally{ veil(false); }
 }
 
@@ -2383,40 +2388,63 @@ $('#viewSeg').addEventListener('click', e=>{
 });
 $('#dpi').addEventListener('change', e=>{ S.opts.dpi = e.target.value; });
 
-/* ---------- sensor otomatis ---------- */
-// Worker OCR dimuat lewat fetch; dari file:// browser memblokirnya, jadi fitur ini
+/* ---------- sensor otomatis ----------
+   Alurnya: pengguna mencentang data yang mau disensor, lalu klik Pindai. Mengubah
+   centang setelahnya belum berlaku sampai tombol (sekarang "Terapkan") diklik lagi.
+   Hasil pindaian disimpan per screenshot, jadi menerapkan pilihan baru tidak perlu
+   memindai ulang; hanya screenshot yang belum pernah dipindai yang diproses. */
+// Pemindai dimuat lewat fetch; dari file:// browser memblokirnya, jadi fitur ini
 // hanya tersedia saat halaman dibuka lewat http/https.
 const autoSupported = location.protocol !== 'file:';
 $('#autoHint').textContent = autoSupported
-  ? 'Unduhan pertama ±6 MB lalu tersimpan di cache browser. Pengenalan teks berjalan lokal — gambar tidak dikirim ke mana pun. Hasilnya kandidat, bukan jaminan: tetap periksa sebelum export.'
-  : 'Sensor otomatis hanya jalan bila halaman dibuka lewat http/https. Saat file dibuka langsung dari disk, browser memblokir worker OCR. Sensor manual tetap berfungsi.';
-$('#oAuto').disabled = !autoSupported;
-$('#oAuto').addEventListener('change', e=>{
-  S.auto.on = e.target.checked;
-  $('#autoBox').hidden = !S.auto.on;
-  if(S.auto.on) scanAll(false); else applyAuto(false);
+  ? 'Pemindaian pertama mengunduh sekitar 6 MB. Hasilnya bisa meleset, jadi cek lagi sebelum diunduh.'
+  : 'Sensor otomatis hanya bisa dipakai kalau halaman ini dibuka dari internet, bukan dari file di komputer. Sensor manual tetap bisa.';
+const catsNow = () => ({ ...S.auto.cats });
+const sameCats = (a, b) => !!a && !!b && Object.keys(a).every(k => !!a[k] === !!b[k]);
+function updateAutoUI(){
+  const btn = $('#bAutoRun'), st = $('#autoStatus');
+  const n = S.items.length, scanned = S.items.filter(it => it._ocr).length, fresh = n - scanned;
+  const picked = Object.values(S.auto.cats).some(Boolean);
+  let label = 'Pindai screenshot', off = false, msg = '';
+  if(!autoSupported){ off = true; }
+  else if(!n){ off = true; msg = 'Tambahkan screenshot dulu.'; }
+  else if(!picked){ off = true; msg = 'Centang minimal satu data.'; }
+  else if(fresh){
+    label = fresh === n ? 'Pindai screenshot' : 'Pindai ' + fresh + ' screenshot baru';
+    if(scanned) msg = fresh + ' screenshot baru belum dipindai.';
+  }else if(S.auto.on && sameCats(S.auto.cats, S.auto.applied)){
+    label = 'Sudah diterapkan'; off = true; msg = 'Semua screenshot sudah dipindai.';
+  }else{
+    label = 'Terapkan'; msg = S.auto.on ? 'Pilihan berubah. Klik Terapkan.' : 'Semua screenshot sudah dipindai.';
+  }
+  btn.textContent = label; btn.disabled = off; st.textContent = msg;
+  $('#bAutoClear').hidden = !S.auto.on;
+}
+$('#bAutoRun').addEventListener('click', ()=>{
+  S.auto.applied = catsNow(); S.auto.on = true;
+  if(S.items.some(it => !it._ocr)) scanAll(false); else applyAuto(true);
+});
+$('#bAutoClear').addEventListener('click', ()=>{
+  S.auto.on = false; S.auto.applied = null; applyAuto(false);
+  toast('Hasil sensor otomatis dihapus. Sensor manual tetap ada.');
 });
 [...document.querySelectorAll('.cats input')].forEach(c=>{
   S.auto.cats[c.dataset.cat] = c.checked;
-  c.addEventListener('change', ()=>{
-    S.auto.cats[c.dataset.cat] = c.checked;
-    if(S.auto.on) applyAuto(false);
-  });
+  c.addEventListener('change', ()=>{ S.auto.cats[c.dataset.cat] = c.checked; updateAutoUI(); });
 });
 document.querySelectorAll('.linkbtn[data-all]').forEach(b=>b.addEventListener('click', ()=>{
   const on = b.dataset.all === '1';
   document.querySelectorAll('.cats input').forEach(c=>{ c.checked = on; S.auto.cats[c.dataset.cat] = on; });
-  if(S.auto.on) applyAuto(false);
+  updateAutoUI();
 }));
-$('#bRescan').addEventListener('click', ()=>scanAll(true));
-$('#veilCancel').addEventListener('click', ()=>{ _cancel = true; toast('Pemindaian dihentikan'); });
+$('#veilCancel').addEventListener('click', ()=>{ _cancel = true; toast('Pemindaian dibatalkan'); });
 
 $('#bAdd').addEventListener('click', ()=>$('#file').click());
 $('#bPick').addEventListener('click', ()=>$('#file').click());
 $('#file').addEventListener('change', e=>{ addFiles(e.target.files); e.target.value = ''; });
 $('#bClear').addEventListener('click', ()=>{
   if(!S.items.length) return;
-  if(confirm('Hapus semua gambar dari halaman ini?')){ S.items = []; encCache.clear(); render(); }
+  if(confirm('Hapus semua screenshot? Keterangan dan sensornya ikut terhapus.')){ S.items = []; encCache.clear(); render(); }
 });
 $('#bPanel').addEventListener('click', ()=>$('#panel').classList.toggle('open'));
 $('#bPdf').addEventListener('click', exportPDF);
