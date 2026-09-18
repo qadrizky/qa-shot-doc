@@ -97,11 +97,13 @@ Tiga lapis:
   *tanggal lahir*, jadi masing-masing bisa dicentang sendiri.
   Sebuah teks dianggap label hanya bila berdiri sendiri, sehingga kalimat seperti
   "Masukkan NIK sesuai KTP" atau "Nama Produk" tidak ikut memicu sensor.
-- **Pencarian ulang** — nilai yang sudah ditemukan (nama, nama ibu, NIK, email,
-  no. HP, password) dicari lagi di **semua** screenshot, karena data yang sama sering
-  muncul ulang tanpa label: nama tercetak di gambar kartu debit, di bottom sheet
-  konfirmasi, atau di halaman review. Toleran terhadap salah baca satu huruf pada
-  kata; angka harus persis.
+- **Pencarian ulang** — nilai yang sudah ditemukan dan lolos validasi dicari lagi di
+  **semua** screenshot, karena data yang sama sering muncul ulang tanpa label: nama
+  tercetak di gambar kartu debit, di dialog konfirmasi, di dokumen perjanjian. Toleran
+  terhadap salah baca satu huruf pada kata ≥ 6 huruf (atau ≥ 4 huruf di dalam nilai
+  multi-kata); nama pendek satu kata dan angka harus persis. Tempat dan tanggal lahir
+  hanya dicocokkan bila seisi baris sama dengan nilainya, supaya nama kota di alamat
+  tidak ikut tertutup.
 - **Pola** — dengan penyaring agar tidak menyensor data yang bukan milik pribadi:
   - NIK harus lolos struktur NIK (kode provinsi 11–94 dan tanggal lahir yang sah
     di digit 7–12), jadi ID transaksi 16 digit tidak ikut tertutup.
@@ -114,6 +116,13 @@ abu-abu muda hilang bila di layar yang sama ada teks hitam, dan area yang
 diredupkan overlay (bottom sheet, dialog) tidak terbaca sama sekali. Polaritas
 ditentukan per blok, sehingga teks putih di header merah, tombol, dan dark mode
 ikut terbaca.
+
+Foto diklasifikasikan dari keterangan di sekitarnya — di atas, di bawah, **atau di
+samping** (thumbnail unggahan dengan keterangan di kanan), dan dari kata-kata khas
+KTP termasuk sisi belakangnya ("Kartu Tanda Penduduk Republik Indonesia"). Bila
+keterangannya menyebut dokumen lain (NPWP, kartu contoh tanda tangan, foto produk),
+keterangan itulah yang menentukan; warna kulit tidak dipakai karena meja kayu di
+foto dokumen pun berwarna mirip kulit.
 
 Foto dibedakan dari **ilustrasi dan render**: pada screenshot JPEG, maskot dan
 gambar kartu debit juga tampak bertekstur. Foto asli punya porsi gradasi besar dan
@@ -131,17 +140,32 @@ tidak ada gambar yang dikirim ke layanan mana pun. Unduhan pertama sekitar
 
 ### Hasil pengujian
 
-**Screenshot nyata.** Aturan deteksi dikalibrasi dan diuji pada 33 screenshot
-alur pembukaan rekening sebuah aplikasi perbankan (bahasa Inggris, JPEG 1080×2400,
-berisi foto e-KTP dari kamera, verifikasi wajah, overlay redup, halaman review dua
-kolom). Lokasi setiap data sensitif ditandai manual sebagai ground truth — 26 area
-di 11 layar — lalu dibandingkan dengan hasil deteksi:
+**Screenshot nyata.** Aturan deteksi dikalibrasi dan diuji pada 115 screenshot dari
+tiga alur aplikasi perbankan (pembukaan rekening, aplikasi internal sales, dan
+pendaftaran merchant — bahasa Indonesia dan Inggris, JPEG 1080×2400). Isinya
+beragam: foto e-KTP dari kamera (sisi depan dan belakang), thumbnail KTP/selfie
+dengan keterangan di samping, verifikasi wajah, overlay dan dialog redup, halaman
+ringkasan dua kolom, dokumen perjanjian, serta foto dokumen pendukung. Lokasi
+setiap data sensitif ditandai manual sebagai ground truth — 92 area di 37 layar —
+lalu dibandingkan dengan hasil deteksi:
 
-| | Versi sebelumnya | Sekarang |
+| Konfigurasi checklist | Area tertutup | Layar dengan area yang salah tersensor |
 |---|---|---|
-| Area sensitif tertutup | 11/26 | **26/26** |
-| Layar dengan area yang salah tersensor | 4/33 | **0/33** |
-| Kategori tidak dicentang ikut tersensor | — | **0** (diuji dengan 4 kombinasi checklist) |
+| Bawaan | **75/75** | **0/115** |
+| Hanya foto KTP, selfie, NIK, tempat & tanggal lahir, nama ibu | **37/37** | **0/115** |
+| Semua, termasuk no. rekening/kartu dan foto lain | **92/92** | **0/115** |
+| Hanya foto / hanya teks | 13/13 · 62/62 | 0/115 |
+
+Kategori yang tidak dicentang tidak ikut tersensor, dengan satu pengecualian yang
+disengaja: bila nomor NPWP sama persis dengan NIK (aturan NPWP 16 digit), nomor itu
+tertutup selama NIK dicentang.
+
+Versi sebelumnya pada set yang sama: 66/75 tertutup, dengan area yang salah
+tersensor di 21/115 layar — sebagian besar akibat satu nilai keliru ("Merchant"
+yang dikira nilai NPWP) yang ikut disebarkan ke semua layar. Karena itu setiap nilai
+kini divalidasi sesuai kategorinya sebelum dipakai atau disebarkan: NIK/NPWP/rekening
+harus berisi cukup digit, nama tidak boleh berupa kalimat petunjuk atau butir daftar,
+email harus mengandung `@`, dan teks bantu seperti "16 Char maks" diabaikan.
 
 Data screenshot tersebut tidak disertakan di repo ini.
 

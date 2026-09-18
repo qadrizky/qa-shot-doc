@@ -1456,7 +1456,10 @@ const OCR_MIN_W = 1400, OCR_MAX_W = 1800;
 const PHOTO_CATS = ['ktpPhoto', 'selfie', 'otherPhoto'];
 // Nilai dari kategori ini dicari ulang di semua gambar: data yang sama sering muncul
 // lagi tanpa label, misalnya nama di gambar kartu debit atau di halaman konfirmasi.
-const PROPAGATE = ['name', 'mother', 'nik', 'npwp', 'email', 'phone', 'password'];
+const PROPAGATE = ['name', 'mother', 'nik', 'npwp', 'email', 'phone', 'password', 'account', 'pob', 'dob'];
+// Nama kota dan tanggal umum dipakai di teks lain (alamat, tanggal transaksi), jadi untuk
+// kategori ini hanya baris yang isinya persis nilai itu yang ikut ditutup.
+const PROPAGATE_WHOLE = ['pob', 'dob'];
 const MONTHS = 'jan|feb|mar|apr|mei|may|jun|jul|agu|agt|aug|sep|okt|oct|nov|des|dec';
 const digits = t => (t.match(/\d/g) || []).join('');
 // Huruf yang sering tertukar oleh OCR disamakan, dipakai saat mencocokkan label.
@@ -1485,8 +1488,9 @@ const LABELS = [
       'ktp number','nik number','identity number','nomor e ktp','no e ktp','nomor ktp','no ktp','nik ktp',
       'nomor identitas','no identitas','id number','nik'] },
   { cats:['npwp'], v:['nomor npwp','no npwp','npwp number','npwp'] },
-  { cats:['name'], v:['nama sesuai ktp','nama lengkap','nama pada kartu','name on card','cardholder name',
-      'card holder name','full name'] },
+  { cats:['name'], v:['nama sesuai identitas','nama sesuai ktp','nama lengkap','nama pada kartu','name on card',
+      'cardholder name','card holder name','full name','nama depan','nama tengah','nama belakang',
+      'nama nasabah','nama pemilik','nama pemohon','first name','middle name','last name'] },
   { cats:['name'], loose:true, v:['nama','name'] },
   { cats:['address'], v:['alamat domisili','alamat lengkap','full address','home address','residential address',
       'office address','alamat kantor','domisili'] },
@@ -1494,7 +1498,10 @@ const LABELS = [
   { cats:['phone'], v:['mobile phone number','handphone number','mobile number','phone number','nomor handphone',
       'no handphone','nomor telepon','no telepon','nomor hp','no hp','no telp'] },
   { cats:['phone'], loose:true, v:['handphone','ponsel','phone'] },
-  { cats:['email'], end:true, v:['e mail address','email address','alamat email'] },
+  { cats:['email'], end:true, v:['e mail address','email address','ulangi alamat email','alamat email'] },
+  { cats:['account'], v:['masukan kembali nomor kartu debit','masukkan kembali nomor kartu debit',
+      'masukan nomor kartu debit','masukkan nomor kartu debit','nomor kartu debit','no kartu debit',
+      'nomor kartu kredit','no kartu kredit','card number','nomor rekening','no rekening','account number'] },
   { cats:['email'], loose:true, end:true, v:['email','e mail','surel'] },
   { cats:['password'], end:true, v:['kata sandi','password'] }
 ].flatMap(L => L.v.map(v => ({ cats:L.cats, split:!!L.split, end:!!L.end, loose:!!L.loose,
@@ -1503,7 +1510,8 @@ const LABELS = [
 // Kata pelengkap setelah label yang bukan bagian dari nilai:
 // "(sesuai KTP)", "as per Kartu Keluarga", "based on e-KTP", "*", "(wajib)".
 const LABEL_TAIL = new Set(['sesuai','dengan','ktp','e','ektp','kk','kartu','keluarga','as','per','based',
-  'on','according','to','wajib','opsional','optional','required']);
+  'on','according','to','wajib','opsional','optional','required','tanpa','gelar','identitas','no','nomor',
+  'fisik']);
 
 function lev1(a, b){                     // jarak edit ≤ 1?
   if(a === b) return true;
@@ -1543,7 +1551,7 @@ function dobLike(m){
   return false;
 }
 const PATTERNS = {
-  nik:    [{ re:/(?<!\d)\d(?:[ .\-]?\d){15}(?!\d)/g, ok:nikLike }],
+  nik:    [{ re:/(?<![0-9A-Za-z])\d(?:[ .\-]?\d){15}(?![0-9A-Za-z])/g, ok:nikLike }],
   npwp:   [{ re:/\b\d{2}[.\-]\d{3}[.\-]\d{3}[.\-]?\d?[.\-]?\d{3}[.\-]\d{3}\b/g,
              ok:m=>[15,16].includes(digits(m).length) }],
   // Tanggal hanya dianggap tanggal lahir bila tahunnya masuk akal untuk kelahiran,
@@ -1552,9 +1560,13 @@ const PATTERNS = {
            { re:/\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b/g, ok:dobLike },
            { re:new RegExp('\\b\\d{1,2}[\\s\\-/.]+(?:'+MONTHS+')[a-z]*\\.?,?[\\s\\-/.]+\\d{4}\\b','gi'), ok:dobLike },
            { re:new RegExp('\\b(?:'+MONTHS+')[a-z]*\\.?\\s+\\d{1,2},?\\s+\\d{4}\\b','gi'), ok:dobLike }],
-  phone:  [{ re:/(?:\+?62|0)\s?8[\d\s.\-]{7,14}\d/g, ok:m=>{ const d = digits(m).length; return d>=10 && d<=15; } }],
+  // nomor seluler Indonesia: 08[1-9]… / +628[1-9]…, tidak boleh menempel di tengah kode lain
+  phone:  [{ re:/(?<![0-9A-Za-z])(?:\+?62|0)\s?8[1-9][\d\s.\-]{6,13}\d/g, ok:m=>{ const d = digits(m).length; return d>=10 && d<=15; } }],
   email:  [{ re:/[A-Za-z0-9._%+\-]+\s?@\s?[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/g }],
-  account:[{ re:/(?<!\d)\d(?:[ .\-]?\d){9,18}(?!\d)/g, ok:m=>{ const d = digits(m).length; return d>=10 && d<=19; } }]
+  // tidak boleh menempel pada huruf: kode dokumen seperti "ABC260800000015" bukan nomor rekening
+  // …dan nominal berformat ribuan ("2.000.000.000") juga bukan
+  account:[{ re:/(?<![0-9A-Za-z])\d(?:[ .\-]?\d){9,18}(?![0-9A-Za-z])/g,
+             ok:m=>{ const d = digits(m).length; return d>=10 && d<=19 && !/^\d{1,3}([.,]\d{3}){2,}$/.test(m.trim()); } }]
 };
 
 /* ---------- geometri ---------- */
@@ -1632,7 +1644,8 @@ function findLabels(lines){
       while(nw < ws.length){
         const t = ws[nw].t, parts = toks(t);
         if(/^\(/.test(t)) paren = true;
-        if(paren || /^[*:]+$/.test(t) || (parts.length && parts.every(x=>LABEL_TAIL.has(x)))){
+        // "/" di "NIK / No. KTP" dan simbol lain tanpa huruf/angka ikut dilewati
+        if(paren || !parts.length || parts.every(x=>LABEL_TAIL.has(x))){
           if(/:\s*$/.test(t)) colon = true;
           if(/\)\s*:?\s*$/.test(t)) paren = false;
           nw++; continue;
@@ -1654,41 +1667,78 @@ function findLabels(lines){
   });
   return found;
 }
-function labelValue(lab, lines, labelWords, W){
-  const ws = lines[lab.li], h = lab.h, box = lab.box;
+// Kandidat nilai untuk sebuah label, berurutan dari yang paling mungkin. Pemanggil
+// memakai kandidat pertama yang lolos validasi kategorinya — jadi bila tepat di
+// samping label ada teks bantu ("16 Char maks") atau kalimat petunjuk, kandidat
+// berikutnya (nilai sebenarnya di bawah) tetap bisa dipakai.
+function labelCandidates(lab, lines, labelWords, W){
+  const ws = lines[lab.li], h = lab.h, box = lab.box, out = [];
   const isLab = w => labelWords.has(w);
   // 1) sisa baris yang sama sampai label berikutnya
   const same = [];
   for(let i = lab.nw; i < ws.length && !isLab(ws[i]); i++) same.push(ws[i]);
-  if(same.length) return same;
+  if(same.length) out.push(same);
   // label lain di baris visual yang sama membatasi kolom nilai ini
   const all = lines.flat();
   const rightLab = all.filter(w => isLab(w) && w.b.x0 > box.x1 &&
     Math.abs(cyOf(w.b) - cyOf(box)) < h*.8).map(w=>w.b.x0);
   const colRight = rightLab.length ? Math.min(...rightLab) - h*.5 : Infinity;
-  // 2) baris visual yang sama, tapi dipecah OCR menjadi baris lain (dua kolom)
+  // 2) baris visual yang sama tapi dipecah OCR (dua kolom) — harus berjarak kolom,
+  //    bukan kata berikutnya dalam paragraf yang kebetulan dipisah OCR
   const row = all.filter(w => !isLab(w) && w.li !== lab.li && w.b.x0 > box.x1 && w.b.x0 < colRight &&
     Math.abs(cyOf(w.b) - cyOf(box)) < Math.max(h, bh(w.b))*.6).sort((a,b)=>a.b.x0-b.b.x0);
-  if(row.length && row[0].b.x0 - box.x1 < W*.6){
-    const out = [row[0]];
-    for(let i = 1; i < row.length && row[i].b.x0 - out[out.length-1].b.x1 < 3*h; i++) out.push(row[i]);
-    return out;
+  // label generik satu kata ("Nama") butuh jarak lebih lebar: spasi paragraf rata
+  // kanan-kiri di dokumen bisa mencapai ~2× tinggi huruf
+  const minGap = (lab.L.loose ? 3 : 1.6) * h;
+  if(row.length && row[0].b.x0 - box.x1 < W*.6 && row[0].b.x0 - box.x1 > minGap){
+    const r = [row[0]];
+    for(let i = 1; i < row.length && row[i].b.x0 - r[r.length-1].b.x1 < 3*h; i++) r.push(row[i]);
+    out.push(r);
   }
-  // 3) tepat di bawah label, di kolom yang sama
+  // 3) baris-baris tepat di bawah label, di kolom yang sama (maksimal dua baris)
   const below = all.filter(w => !isLab(w) && w.b.y0 >= box.y1 - h*.3 && w.b.y0 <= box.y1 + 3.5*h &&
-    w.b.x0 >= box.x0 - 1.5*h && w.b.x0 < Math.min(colRight, box.x0 + Math.max((box.x1-box.x0)*1.5, W*.35)));
-  if(!below.length) return [];
-  below.sort((a,b)=>a.b.y0-b.b.y0);
-  const top = below[0], rh = bh(top.b);
-  const rowWords = all.filter(w => !isLab(w) && Math.abs(cyOf(w.b) - cyOf(top.b)) < rh*.6 &&
-    w.b.x0 >= box.x0 - 1.5*h && w.b.x0 < colRight).sort((a,b)=>a.b.x0-b.b.x0);
-  const out = [];
-  for(const w of rowWords){
-    if(out.length && w.b.x0 - out[out.length-1].b.x1 > 3*rh) break;
-    out.push(w);
+    w.b.x0 >= box.x0 - 1.5*h && w.b.x0 < Math.min(colRight, box.x0 + Math.max((box.x1-box.x0)*1.5, W*.35)))
+    .sort((a,b)=>a.b.y0-b.b.y0);
+  const used = new Set();
+  for(const top of below){
+    if(used.has(top) || out.length >= 4) continue;
+    const rh = bh(top.b);
+    const rowWords = all.filter(w => !isLab(w) && Math.abs(cyOf(w.b) - cyOf(top.b)) < rh*.6 &&
+      w.b.x0 >= box.x0 - 1.5*h && w.b.x0 < colRight).sort((a,b)=>a.b.x0-b.b.x0);
+    const r = [];
+    for(const w of rowWords){
+      if(r.length && w.b.x0 - r[r.length-1].b.x1 > 3*rh) break;
+      r.push(w);
+    }
+    rowWords.forEach(w=>used.add(w));
+    if(!r.length) continue;
+    if(lab.L.loose && !lab.colon && fontSize(r) < lab.size*1.08) continue;
+    out.push(r);
   }
-  if(lab.L.loose && !lab.colon && out.length && fontSize(out) < lab.size*1.08) return [];
   return out;
+}
+// Validasi nilai per kategori. Tanpa ini, judul dialog "Nama Ibu Kandung" memasangkan
+// kalimat petunjuk di bawahnya sebagai nilai, dan satu nilai NPWP yang keliru ("Merchant")
+// ikut disebarkan ke semua layar yang memuat kata itu.
+const FILLER = new Set(['data','di','dan','yang','atau','untuk','the','of','and','or','in','at']);
+const INSTRUCTION = /\b(pastikan|masukkan|masukan|silakan|silahkan|please|enter|tanpa gelar|contoh|example)\b/i;
+function valueOk(cat, ws){
+  const t = ws.map(w=>w.t).join(' '), d = digits(t).length, masked = /[*•x]{3,}/i.test(t);
+  switch(cat){
+    case 'nik': case 'npwp': case 'account': return d >= 8 || (masked && d >= 3);
+    case 'phone':    return d >= 7 || (masked && d >= 3);
+    case 'dob':      return /\d/.test(t) || new RegExp('('+MONTHS+')', 'i').test(t);
+    case 'email':    return /@/.test(t);
+    case 'password': return ws.length <= 3;
+    case 'name': case 'mother': case 'pob': {
+      // butir daftar ("1. Sesuai data di Kartu Keluarga") atau frasa yang isinya kebanyakan
+      // kata pelengkap label bukanlah nama
+      const tk = toks(t), filler = tk.filter(x => LABEL_TAIL.has(x) || FILLER.has(x)).length;
+      return /[a-z]{2}/i.test(t) && !/\d{3,}/.test(t) && ws.length <= 5 && !/:\s*$/.test(t) &&
+             !INSTRUCTION.test(t) && !/^\d+[.)]/.test(t) && filler*2 < tk.length;
+    }
+    default: return true;
+  }
 }
 
 /* ---------- foto ----------
@@ -1806,12 +1856,20 @@ function findPhotos(item){
 }
 const KTP_WORDS = new Set(['provinsi','kabupaten','kota','nik','nama','tempat','lahir','tgl','jenis','kelamin',
   'alamat','agama','kewarganegaraan','berlaku','hingga','golongan','darah','gol','pekerjaan','perkawinan',
-  'kecamatan','kel','desa','rt','rw','wni','seumur','hidup']);
-const KTP_HINT    = ['ktp','ektp','identitas','kartu'];
-const SELFIE_HINT = ['selfie','swafoto','wajah','face','liveness','diri'];
+  'kecamatan','kel','desa','rt','rw','wni','seumur','hidup',
+  'kartu','tanda','penduduk','republik','indonesia']);          // sisi belakang e-KTP
+const PHOTO_BUTTONS = new Set(['retake','foto','ulang','ambil','upload','unggah','ubah','edit','hapus',
+  'lihat','detail','retry','submit','next','take','photo']);
+const UPLOAD_HINT = /\b(foto|photo|dokumen|document|npwp|upload|unggah|retake)\b/;
+const NON_KTP     = /\b(npwp|tanda tangan|contoh|produk|nampak|usaha|debit|kredit|merchant|promo|banner)\b/;
+const KTP_HINT    = /\b(e ?ktp|kartu identitas|kartu tanda penduduk|identity card|id card|id photo)\b/;
+const SELFIE_HINT = /\b(selfie|swafoto|swa foto|foto nasabah|foto diri|wajah|face|liveness)\b/;
 // Klasifikasi foto: KTP bila di dalamnya terbaca kata-kata khas KTP, atau judul di
-// dekatnya / judul layar menyebut KTP; selfie bila judulnya menyebut selfie/wajah
-// atau porsi warna kulitnya besar. Satu foto bisa masuk dua kelas.
+// dekatnya / judul layar menyebut KTP; selfie bila judulnya menyebut selfie/wajah.
+// "Judul di dekatnya" termasuk teks di samping foto (thumbnail dengan keterangan di
+// kanan). Bila foto punya judul tapi judulnya bukan KTP/selfie ("Dokumen Pendukung",
+// "Foto NPWP"), judul itu yang menentukan — warna kulit tidak dipakai, karena meja
+// kayu di foto dokumen pun berwarna mirip kulit.
 function classifyPhoto(p, words, W, H, solo){
   const inside = new Set(), near = [], title = [];
   for(const w of words){
@@ -1820,19 +1878,36 @@ function classifyPhoto(p, words, W, H, solo){
     const inX = cx >= p.x && cx <= p.x+p.w, inY = cy >= p.y && cy <= p.y+p.h;
     if(inX && inY){ toks(w.t).forEach(t=>{ if(KTP_WORDS.has(conf(t))) inside.add(conf(t)); }); continue; }
     const overlapX = cx >= p.x - .05 && cx <= p.x + p.w + .05;
-    if(overlapX && ((cy < p.y && p.y - cy < .07) || (cy > p.y+p.h && cy - p.y - p.h < .035)))
-      near.push(...toks(w.t));
+    const above = overlapX && cy < p.y && p.y - cy < .07, under = overlapX && cy > p.y+p.h && cy - p.y - p.h < .035;
+    const side = cy >= p.y - .035 && cy <= p.y + p.h + .01 &&
+                 ((cx > p.x+p.w && cx - p.x - p.w < .5) || (cx < p.x && p.x - cx < .35));
+    if((above || under || side) && cy >= .1) near.push(...toks(w.t));
   }
-  const hint = list => near.some(t=>list.includes(t)) || (solo && title.some(t=>list.includes(t)));
+  const nearTxt = ' ' + near.join(' ') + ' ', titleTxt = ' ' + title.join(' ') + ' ';
+  const hint = re => re.test(nearTxt) || (solo && re.test(titleTxt));
+  // berjudul = ada teks deskriptif di dekatnya (tombol seperti "Retake"/"Foto Ulang" tidak dihitung)
+  const labelled = near.some(t => /^[a-z]{3,}$/.test(t) && !PHOTO_BUTTONS.has(t));
   const cls = new Set();
-  if(!p.photo) return inside.size >= 3 ? new Set(['ktpPhoto']) : cls;   // ilustrasi/render: hanya kartu KTP bertulisan
-  // Cadangan untuk foto KTP kecil yang teksnya tidak terbaca dan tanpa judul: proporsi
+  // Wilayah yang gagal uji foto (ilustrasi, render, atau foto dokumen yang nyaris polos):
+  // hanya dianggap foto bila ada bukti kuat — teks KTP di dalamnya, atau keterangan
+  // unggahan di dekatnya ("Foto …", "Dokumen Pendukung") pada thumbnail berukuran kecil.
+  if(!p.photo){
+    if(inside.size >= 3) return new Set(['ktpPhoto']);
+    if(p.w*p.h < .15 && UPLOAD_HINT.test(nearTxt)){
+      if(hint(KTP_HINT)) cls.add('ktpPhoto');
+      if(hint(SELFIE_HINT)) cls.add('selfie');
+      if(!cls.size) cls.add('otherPhoto');
+    }
+    return cls;
+  }
+  // Cadangan untuk foto KTP kecil tanpa judul yang teksnya tidak terbaca: proporsi
   // kartu identitas ISO ID-1 (≈1,586) ditambah ciri kartu.
   const ar = (p.w*W) / Math.max(1, p.h*H);
   const cardShape = Math.abs(ar - 1.586) / 1.586 < .12;
+  // cadangan proporsi kartu tidak dipakai bila keterangannya jelas menyebut dokumen lain
   if(inside.size >= 3 || hint(KTP_HINT) ||
-     (cardShape && (inside.size >= 1 || (p.skin > .01 && p.skin < .2)))) cls.add('ktpPhoto');
-  if(hint(SELFIE_HINT) || p.skin >= .15) cls.add('selfie');
+     (!NON_KTP.test(nearTxt) && cardShape && (inside.size >= 1 || (p.skin > .01 && p.skin < .2)))) cls.add('ktpPhoto');
+  if(hint(SELFIE_HINT) || (!labelled && p.skin >= .15)) cls.add('selfie');
   if(!cls.size) cls.add('otherPhoto');
   return cls;
 }
@@ -1863,9 +1938,18 @@ function detect(item, cats){
     const med = k.map(w=>bh(w.b)).sort((a,b)=>a-b)[k.length>>1];
     return k.filter(w => bh(w.b) <= med*1.8);
   };
+  // teks bantu seperti "16 Char maks" bukan bagian dari nilai
+  const helper = ws => ws.filter((w,i) => !/^(char|chars|karakter|maks|max)$/i.test(w.t) &&
+    !(/^\d{1,3}$/.test(w.t) && ws[i+1] && /^(char|chars|karakter)$/i.test(ws[i+1].t)));
   for(const lab of labs){
     if(!lab.L.cats.some(c=>cats[c])) continue;
-    const val = clean(labelValue(lab, lines, labelWords, W));
+    let val = [];
+    for(const cand of labelCandidates(lab, lines, labelWords, W)){
+      const v = clean(helper(cand));
+      if(!v.length) continue;
+      const ok = lab.L.split ? v.some(w=>/\d/.test(w.t)) || valueOk('pob', v) : valueOk(lab.L.cats[0], v);
+      if(ok){ val = v; break; }
+    }
     if(!val.length) continue;
     if(lab.L.split){
       const isDate = w => /\d/.test(w.t) || new RegExp('^('+MONTHS+')', 'i').test(w.t);
@@ -1891,13 +1975,26 @@ function detect(item, cats){
       }
     }
   }
+  // Kode negara "+62" sering berada di kolom/field terpisah di kiri nomor HP
+  // (label "KODE" di atasnya): ikut ditutup bila sebaris dengan nomornya.
+  for(const b of found){
+    if(b.cat !== 'phone') continue;
+    const x0 = b.x*W, y0 = b.y*H, y1 = (b.y+b.h)*H, hh = y1 - y0;
+    const cc = words.find(w => /^[+4]?62$/.test(w.t) && w.b.x1 <= x0 + 2 && x0 - w.b.x1 < hh*4 &&
+      Math.abs(cyOf(w.b) - (y0+y1)/2) < hh*.6);
+    if(cc){ const x = clamp(cc.b.x0/W - .006, 0, 1); b.w += b.x - x; b.x = x; }
+  }
   return found;
 }
 // Cari ulang nilai yang sudah ketemu (dari gambar mana pun) sebagai rangkaian kata utuh.
 // Kata huruf (≥ 4 huruf) boleh selisih satu karakter karena OCR di atas gambar kartu
 // atau latar bertekstur kerap salah baca satu huruf ("Dianz"); angka harus persis.
 const normVal = t => String(t).toLowerCase().replace(/[^a-z0-9@.]+/g,' ').replace(/\s+/g,' ').trim();
-const wordEq = (a, b) => a === b || (/^[a-z]{4,}$/.test(a) && /^[a-z]{4,}$/.test(b) && lev1(a, b));
+// Toleransi satu huruf hanya untuk kata ≥ 6 huruf, atau kata ≥ 4 huruf di dalam nilai
+// multi-kata ("Budi Santosa" ≈ "Budi Santoso"). Nama pendek satu kata seperti "SITI" harus
+// persis — kalau tidak, ia ikut menutup "Anda" di seluruh UI berbahasa Indonesia.
+const wordEq = (a, b, multi) => a === b ||
+  (/^[a-z]+$/.test(a) && /^[a-z]+$/.test(b) && Math.min(a.length, b.length) >= (multi ? 4 : 6) && lev1(a, b));
 function propagate(item, values){
   const ocr = item._ocr, W = ocr.w, H = ocr.h, found = [];
   if(!values.length) return found;
@@ -1908,7 +2005,8 @@ function propagate(item, values){
       for(const v of values){
         const n = v.words.length;
         if(s + n > tk.length) continue;
-        if(!v.words.every((vw, k) => wordEq(tk[s+k].t, vw))) continue;
+        if(v.whole && (s !== 0 || n !== tk.length)) continue;
+        if(!v.words.every((vw, k) => wordEq(tk[s+k].t, vw, n > 1))) continue;
         const keep = [...new Set(tk.slice(s, s+n).map(x=>x.w))];
         found.push(mkAuto(unionBox(keep.map(w=>w.b)), W, H, v.cat, v.words.join(' ')));
       }
@@ -2044,7 +2142,9 @@ function applyAuto(report){
       for(const b of f){
         if(!b.val || !PROPAGATE.includes(b.cat)) continue;
         const v = normVal(b.val);
-        if(v.replace(/[^a-z0-9]/g,'').length >= 4 && !seen.has(v)){ seen.add(v); values.push({ words:v.split(' '), cat:b.cat }); }
+        if(v.replace(/[^a-z0-9]/g,'').length >= 4 && !seen.has(v)){
+          seen.add(v); values.push({ words:v.split(' '), cat:b.cat, whole:PROPAGATE_WHOLE.includes(b.cat) });
+        }
       }
     }
   }
