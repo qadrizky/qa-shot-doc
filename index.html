@@ -712,6 +712,7 @@ function(r){"object"==typeof e&&void 0!==t?t.exports=r():"function"==typeof defi
             <label class="chk"><input type="checkbox" data-cat="npwp" checked> NPWP</label>
             <label class="chk"><input type="checkbox" data-cat="phone" checked> No. HP</label>
             <label class="chk"><input type="checkbox" data-cat="email" checked> Email</label>
+            <label class="chk"><input type="checkbox" data-cat="password" checked> Password</label>
             <label class="chk"><input type="checkbox" data-cat="account"> No. rekening / kartu</label>
             <label class="chk"><input type="checkbox" data-cat="address"> Alamat</label>
           </div>
@@ -803,7 +804,7 @@ const S = {
           header:true, num:true, cap:true, border:true, dpi:'220' },
   auto: { on:false, cats:{ ktpPhoto:true, selfie:true, otherPhoto:false,
                            nik:true, pob:true, dob:true, mother:true, name:true,
-                           npwp:true, phone:true, email:true, account:false, address:false } },
+                           npwp:true, phone:true, email:true, password:true, account:false, address:false } },
   meta: { title:'', tester:'', date:'', device:'', build:'' }
 };
 let uid = 0;
@@ -1446,40 +1447,63 @@ async function addFiles(list){
    vendor/, foto lewat analisis piksel di canvas. Tidak ada gambar yang dikirim
    ke layanan mana pun. Hasil analisis disimpan per gambar, jadi mengubah pilihan
    kategori berlaku seketika tanpa memindai ulang.
+   Aturan-aturannya dikalibrasi pada screenshot alur pembukaan rekening sungguhan
+   (Indonesia & Inggris, JPEG, overlay redup, label abu-abu muda).
    Deteksi ini sengaja diposisikan sebagai KANDIDAT, bukan jaminan: yang meleset
    satu angka lebih berbahaya daripada tidak ada deteksi sama sekali, karena
    membuat orang berhenti memeriksa.                                              */
 const OCR_MIN_W = 1400, OCR_MAX_W = 1800;
 const PHOTO_CATS = ['ktpPhoto', 'selfie', 'otherPhoto'];
+// Nilai dari kategori ini dicari ulang di semua gambar: data yang sama sering muncul
+// lagi tanpa label, misalnya nama di gambar kartu debit atau di halaman konfirmasi.
+const PROPAGATE = ['name', 'mother', 'nik', 'npwp', 'email', 'phone', 'password'];
 const MONTHS = 'jan|feb|mar|apr|mei|may|jun|jul|agu|agt|aug|sep|okt|oct|nov|des|dec';
 const digits = t => (t.match(/\d/g) || []).join('');
 // Huruf yang sering tertukar oleh OCR disamakan, dipakai saat mencocokkan label.
 const conf = t => t.replace(/[l1|!]/g,'i').replace(/0/g,'o').replace(/5/g,'s');
-const toks = t => String(t).toLowerCase().replace(/[’'`]/g,'').replace(/[^a-z0-9]+/g,' ').trim()
+const toks = t => String(t).toLowerCase().replace(/[’'`]/g,' ').replace(/[^a-z0-9]+/g,' ').trim()
   .split(' ').filter(Boolean);
 
-/* ---------- label ---------- */
-// cats: kategori yang dilindungi nilai label ini. split: label gabungan tempat+tanggal
-// lahir — nilainya dipecah: kata bertanggal ke 'dob', sisanya ke 'pob'.
+/* ---------- label ----------
+   cats: kategori yang dilindungi nilai label ini.
+   split: label gabungan tempat+tanggal lahir — kata bertanggal ke 'dob', sisanya 'pob'.
+   end: label boleh berada di AKHIR baris pendek ("Mobile Banking Password",
+        "Active Email Address"); label lain harus di awal baris.
+   loose: label generik satu kata. Nilai di bawahnya hanya diterima bila hurufnya
+        lebih besar dari label (pola floating label), supaya opsi dalam daftar seperti
+        "Telephone / SMS / E-mail" tidak dianggap pasangan label–nilai.          */
 const LABELS = [
   { cats:['pob','dob'], split:true, v:['tempat tgl lahir','tempat tanggal lahir','tempat dan tanggal lahir',
       'tempat tgl lhr','tempat tanggal lhr','place date of birth','place and date of birth','ttl'] },
   { cats:['mother'], v:['nama gadis ibu kandung','nama ibu kandung','ibu kandung','nama ibu',
-      'mothers maiden name','mother s maiden name','maiden name','mother name'] },
-  { cats:['pob'], v:['tempat lahir','kota lahir','place of birth','birth place','birthplace','pob'] },
-  { cats:['dob'], v:['tanggal lahir','tgl lahir','tanggal kelahiran','date of birth','birth date','birthdate','dob'] },
-  { cats:['nik'], v:['nomor induk kependudukan','nomor ktp','no ktp','nomor e ktp','no e ktp','nik ktp',
+      'mother s maiden name','mothers maiden name','maiden name','mother s name','mothers name','mother name'] },
+  { cats:['pob'], v:['tempat lahir','kota lahir','place of birth','birth place','birthplace'] },
+  { cats:['pob'], loose:true, v:['pob'] },
+  { cats:['dob'], v:['tanggal lahir','tgl lahir','tanggal kelahiran','date of birth','birth date','birthdate'] },
+  { cats:['dob'], loose:true, v:['dob'] },
+  { cats:['nik'], v:['nomor induk kependudukan','identity card number','id card number','e ktp number',
+      'ktp number','nik number','identity number','nomor e ktp','no e ktp','nomor ktp','no ktp','nik ktp',
       'nomor identitas','no identitas','id number','nik'] },
-  { cats:['npwp'], v:['nomor npwp','no npwp','npwp'] },
-  { cats:['name'], v:['nama lengkap','nama sesuai ktp','full name','nama'] },
-  { cats:['address'], v:['alamat domisili','alamat lengkap','alamat','domisili','address'] },
-  { cats:['phone'], v:['nomor handphone','no handphone','nomor telepon','no telepon','nomor hp','no hp',
-      'no telp','phone number','handphone','ponsel'] },
-  { cats:['email'], v:['alamat email','email','e mail','surel'] }
-].flatMap(L => L.v.map(v => ({ cats:L.cats, split:!!L.split, words:v.split(' ').map(conf) })))
+  { cats:['npwp'], v:['nomor npwp','no npwp','npwp number','npwp'] },
+  { cats:['name'], v:['nama sesuai ktp','nama lengkap','nama pada kartu','name on card','cardholder name',
+      'card holder name','full name'] },
+  { cats:['name'], loose:true, v:['nama','name'] },
+  { cats:['address'], v:['alamat domisili','alamat lengkap','full address','home address','residential address',
+      'office address','alamat kantor','domisili'] },
+  { cats:['address'], loose:true, v:['alamat','address'] },
+  { cats:['phone'], v:['mobile phone number','handphone number','mobile number','phone number','nomor handphone',
+      'no handphone','nomor telepon','no telepon','nomor hp','no hp','no telp'] },
+  { cats:['phone'], loose:true, v:['handphone','ponsel','phone'] },
+  { cats:['email'], end:true, v:['e mail address','email address','alamat email'] },
+  { cats:['email'], loose:true, end:true, v:['email','e mail','surel'] },
+  { cats:['password'], end:true, v:['kata sandi','password'] }
+].flatMap(L => L.v.map(v => ({ cats:L.cats, split:!!L.split, end:!!L.end, loose:!!L.loose,
+                               words:v.split(' ').map(conf) })))
  .sort((a,b) => b.words.length - a.words.length);
-// Kata pelengkap setelah label yang bukan bagian dari nilai: "(sesuai KTP)", "*", "(wajib)".
-const LABEL_TAIL = new Set(['sesuai','ktp','wajib','opsional','optional','required']);
+// Kata pelengkap setelah label yang bukan bagian dari nilai:
+// "(sesuai KTP)", "as per Kartu Keluarga", "based on e-KTP", "*", "(wajib)".
+const LABEL_TAIL = new Set(['sesuai','dengan','ktp','e','ektp','kk','kartu','keluarga','as','per','based',
+  'on','according','to','wajib','opsional','optional','required']);
 
 function lev1(a, b){                     // jarak edit ≤ 1?
   if(a === b) return true;
@@ -1526,7 +1550,7 @@ const PATTERNS = {
   // jadi tanggal transaksi/pengajuan tidak ikut tersensor.
   dob:    [{ re:/\b\d{1,2}\s?[-/.]\s?\d{1,2}\s?[-/.]\s?\d{4}\b/g, ok:dobLike },
            { re:/\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b/g, ok:dobLike },
-           { re:new RegExp('\\b\\d{1,2}\\s+(?:'+MONTHS+')[a-z]*\\.?,?\\s+\\d{4}\\b','gi'), ok:dobLike },
+           { re:new RegExp('\\b\\d{1,2}[\\s\\-/.]+(?:'+MONTHS+')[a-z]*\\.?,?[\\s\\-/.]+\\d{4}\\b','gi'), ok:dobLike },
            { re:new RegExp('\\b(?:'+MONTHS+')[a-z]*\\.?\\s+\\d{1,2},?\\s+\\d{4}\\b','gi'), ok:dobLike }],
   phone:  [{ re:/(?:\+?62|0)\s?8[\d\s.\-]{7,14}\d/g, ok:m=>{ const d = digits(m).length; return d>=10 && d<=15; } }],
   email:  [{ re:/[A-Za-z0-9._%+\-]+\s?@\s?[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/g }],
@@ -1536,16 +1560,24 @@ const PATTERNS = {
 /* ---------- geometri ---------- */
 const bh = b => b.y1 - b.y0;
 const cyOf = b => (b.y0 + b.y1)/2;
+// Perkiraan ukuran huruf dari tinggi kotak kata: kotak "Maria" (tanpa huruf
+// menjulur ke bawah) lebih pendek dari "Kartu Keluarga" walau hurufnya sama besar.
+function fontSize(ws){
+  return Math.max(...ws.map(w => {
+    const asc = /[A-Z0-9bdfhklt!?/()&'"]/.test(w.t), desc = /[gjpqy,;()]/.test(w.t);
+    return bh(w.b) / (asc ? (desc ? .95 : .73) : (desc ? .76 : .53));
+  }));
+}
 function unionBox(list){
   if(!list.length) return null;
   return { x0:Math.min(...list.map(b=>b.x0)), y0:Math.min(...list.map(b=>b.y0)),
            x1:Math.max(...list.map(b=>b.x1)), y1:Math.max(...list.map(b=>b.y1)) };
 }
-function mkAuto(b, W, H, cat, pad){
-  const px = pad == null ? 0.006 : pad, py = pad == null ? 0.005 : pad;
+function mkAuto(b, W, H, cat, val){
+  const px = 0.006, py = 0.005;
   const x = clamp(b.x0/W - px, 0, 1), y = clamp(b.y0/H - py, 0, 1);
   return { x, y, w:Math.min((b.x1-b.x0)/W + px*2, 1-x), h:Math.min((b.y1-b.y0)/H + py*2, 1-y),
-           s:'red', auto:true, cat };
+           s:'red', auto:true, cat, val };
 }
 function overlapRatio(a,b){
   const ox = Math.max(0, Math.min(a.x+a.w, b.x+b.w) - Math.max(a.x, b.x));
@@ -1568,10 +1600,8 @@ function dedupe(list){
    yang sama (layout dua kolom), atau tepat di bawahnya (floating label di HP).  */
 function findLabels(lines){
   const found = [];
+  const valueish = t => /@/.test(t) || (t.match(/\d/g) || []).length > t.length*.3;
   lines.forEach((ws, li)=>{
-    // Kata yang tampak seperti nilai (berisi "@" atau didominasi angka) tidak pernah
-    // jadi label — tanpa ini potongan "mail" di "budi@mail.com" terbaca sebagai label Email.
-    const valueish = t => /@/.test(t) || (t.match(/\d/g) || []).length > t.length*.3;
     const tk = [];
     ws.forEach((w, wi)=>{
       if(valueish(w.t)) { tk.push({ t:'', wi, first:true, last:true }); return; }
@@ -1584,22 +1614,25 @@ function findLabels(lines){
       for(const L of LABELS){
         const n = L.words.length;
         if(p + n > tk.length) continue;
-        // label harus mulai dan berakhir di batas kata utuh, bukan di tengah kata
-        if(!tk[p].first || !tk[p+n-1].last) continue;
+        if(!tk[p].first || !tk[p+n-1].last) continue;   // harus di batas kata utuh
         if(L.words.every((lw,k)=>tokEq(tk[p+k].t, lw))){ hit = L; break; }
       }
       if(!hit){ p++; continue; }
       const first = tk[p].wi, last = tk[p + hit.words.length - 1].wi;
       const h = Math.max(...ws.slice(first, last+1).map(w=>bh(w.b)), 1);
-      // awal: awal baris, jarak kolom, atau hanya ikon/simbol di depannya
       const prev = ws[first-1];
-      const leadOk = !prev || (ws[first].b.x0 - prev.b.x1) > 1.6*h || !/[a-z0-9]{3}/i.test(prev.t);
-      // akhir: lewati "(sesuai KTP)", "*", ":" lalu cek titik dua / jarak kolom / akhir baris
+      // awal: awal baris, jarak kolom, hanya ikon di depannya — atau, untuk label
+      // "end", baris pendek tanpa angka yang diakhiri label ini
+      const endOk = hit.end && last === ws.length-1 && ws.length <= 6 && !ws.some(w=>/\d/.test(w.t)) &&
+                    !/[.!?,;]\s*$/.test(ws[last].t);             // bukan ujung kalimat yang terbungkus
+      const leadOk = endOk || !prev || (ws[first].b.x0 - prev.b.x1) > 1.6*h || !/[a-z0-9]{3}/i.test(prev.t);
+      // akhir: lewati "(sesuai KTP)", "as per Kartu Keluarga", "*", ":" lalu cek
+      // titik dua / jarak kolom / akhir baris
       let nw = last + 1, colon = /:\s*$/.test(ws[last].t), paren = false;
       while(nw < ws.length){
-        const t = ws[nw].t, low = t.toLowerCase().replace(/[^a-z]/g,'');
+        const t = ws[nw].t, parts = toks(t);
         if(/^\(/.test(t)) paren = true;
-        if(paren || /^[*:]+$/.test(t) || LABEL_TAIL.has(low)){
+        if(paren || /^[*:]+$/.test(t) || (parts.length && parts.every(x=>LABEL_TAIL.has(x)))){
           if(/:\s*$/.test(t)) colon = true;
           if(/\)\s*:?\s*$/.test(t)) paren = false;
           nw++; continue;
@@ -1609,8 +1642,11 @@ function findLabels(lines){
       const lastKept = ws[nw-1];
       const tailOk = nw >= ws.length || colon || (ws[nw].b.x0 - lastKept.b.x1) > 1.6*h;
       if(leadOk && tailOk){
-        found.push({ L:hit, li, first, last, nw, h,
-          box:unionBox(ws.slice(first, last+1).map(w=>w.b)) });
+        // Label "end" seperti "Mobile Banking Password": seluruh frasa adalah labelnya,
+        // jadi kolom nilainya dihitung dari awal baris, bukan dari kata terakhir.
+        const from = endOk && first > 0 && !(prev && (ws[first].b.x0 - prev.b.x1) > 1.6*h) ? 0 : first;
+        found.push({ L:hit, li, first:from, last, nw, h, colon, size:fontSize(ws.slice(from, last+1)),
+          box:unionBox(ws.slice(from, last+1).map(w=>w.b)) });
         p += hit.words.length;
         while(p < tk.length && tk[p].wi < nw) p++;
       }else p++;
@@ -1651,15 +1687,20 @@ function labelValue(lab, lines, labelWords, W){
     if(out.length && w.b.x0 - out[out.length-1].b.x1 > 3*rh) break;
     out.push(w);
   }
+  if(lab.L.loose && !lab.colon && out.length && fontSize(out) < lab.size*1.08) return [];
   return out;
 }
 
 /* ---------- foto ----------
-   Screenshot UI terdiri dari warna rata, teks, dan ikon; foto berisi tekstur dan
-   gradasi. Gambar di-subsample tanpa smoothing (jadi piksel teks tetap tajam),
-   dibagi sel kecil, lalu tiap sel dinilai: banyak warna berbeda dan tidak ada satu
-   warna yang dominan = sel foto. Sel foto yang bersebelahan digabung menjadi
-   wilayah, lalu tepinya dirapatkan ke batas foto sebenarnya.                      */
+   Gambar di-subsample tanpa smoothing lalu dibagi sel 6×6. Per sel dihitung:
+   - sibuk : banyak warna berbeda tanpa satu warna dominan (tekstur)
+   - tonal : berubah halus (bukan rata sempurna, bukan tepi tajam teks)
+   - rata  : nyaris satu warna
+   Usulan wilayah datang dari sel sibuk (foto tajam) dan dari sel tonal yang padat
+   (foto buram, misalnya wajah di layar verifikasi). Setiap usulan lalu harus lolos
+   uji "benar-benar foto": ilustrasi vektor dan render kartu — yang pada JPEG juga
+   tampak bertekstur — tersusun dari sedikit warna rata, sedangkan foto punya porsi
+   gradasi besar dan palet warna yang tersebar.                                     */
 function findPhotos(item){
   const SW = 360, SH = Math.max(1, Math.round(item.h * SW / item.w)), CS = 6;
   const c = el('canvas'); c.width = SW; c.height = SH;
@@ -1667,102 +1708,131 @@ function findPhotos(item){
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(item._img, 0, 0, SW, SH);
   const d = ctx.getImageData(0, 0, SW, SH).data;
-  const gw = Math.floor(SW/CS), gh = Math.floor(SH/CS);
-  const busy = new Uint8Array(gw*gh);
-  const q = i => ((d[i]>>3)<<10) | ((d[i+1]>>3)<<5) | (d[i+2]>>3);
+  const gw = Math.floor(SW/CS), gh = Math.floor(SH/CS), N = gw*gh;
+  const busy = new Uint8Array(N), tonal = new Uint8Array(N), flat = new Uint8Array(N);
+  const q5 = i => ((d[i]>>3)<<10) | ((d[i+1]>>3)<<5) | (d[i+2]>>3);
   for(let cy=0; cy<gh; cy++) for(let cx=0; cx<gw; cx++){
-    const cnt = new Map(); let top = 0;
+    const cnt = new Map(); let top = 0, s = 0, s2 = 0, mn = 255, mx = 0;
     for(let y=0; y<CS; y++) for(let x=0; x<CS; x++){
-      const k = q(((cy*CS+y)*SW + cx*CS+x)*4), n = (cnt.get(k)||0) + 1;
+      const i = ((cy*CS+y)*SW + cx*CS+x)*4, k = q5(i), n = (cnt.get(k)||0) + 1;
       cnt.set(k, n); if(n > top) top = n;
+      const L = (d[i]*299 + d[i+1]*587 + d[i+2]*114)/1000;
+      s += L; s2 += L*L; if(L < mn) mn = L; if(L > mx) mx = L;
     }
-    busy[cy*gw+cx] = (cnt.size >= 12 && top <= CS*CS*.34) ? 1 : 0;
+    const m = s/(CS*CS), sd = Math.sqrt(Math.max(0, s2/(CS*CS) - m*m)), j = cy*gw+cx;
+    busy[j]  = (cnt.size >= 12 && top <= CS*CS*.34) ? 1 : 0;
+    flat[j]  = sd < 1.2 ? 1 : 0;
+    tonal[j] = (sd >= 1.2 && mx - mn < 60) ? 1 : 0;
   }
-  // closing morfologis (dilasi lalu erosi) menjembatani area foto yang halus
-  const morph = (src, grow) => {
-    const out = new Uint8Array(gw*gh);
+  const morph = (src, grow) => {           // dilasi / erosi 5×5
+    const out = new Uint8Array(N);
     for(let y=0; y<gh; y++) for(let x=0; x<gw; x++){
       let v = grow ? 0 : 1;
-      for(let dy=-2; dy<=2 && v === (grow?0:1); dy++) for(let dx=-2; dx<=2; dx++){
+      outer: for(let dy=-2; dy<=2; dy++) for(let dx=-2; dx<=2; dx++){
         const yy = y+dy, xx = x+dx;
         const s = (yy<0||yy>=gh||xx<0||xx>=gw) ? 0 : src[yy*gw+xx];
-        if(grow && s){ v = 1; break; }
-        if(!grow && !s){ v = 0; break; }
+        if(grow && s){ v = 1; break outer; }
+        if(!grow && !s){ v = 0; break outer; }
       }
       out[y*gw+x] = v;
     }
     return out;
   };
-  const mask = morph(morph(busy, true), false);
-  // komponen terhubung
-  const seen = new Uint8Array(gw*gh), regions = [];
-  for(let i=0; i<gw*gh; i++){
-    if(!mask[i] || seen[i]) continue;
-    let x0=1e9, y0=1e9, x1=-1, y1=-1, n=0, raw=0; const st=[i]; seen[i]=1;
-    while(st.length){
-      const j = st.pop(), x = j%gw, y = (j/gw)|0; n++; raw += busy[j];
-      if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y;
-      for(const k of [j-1, j+1, j-gw, j+gw]){
-        if(k<0 || k>=gw*gh || seen[k] || !mask[k]) continue;
-        if((k===j-1 && x===0) || (k===j+1 && x===gw-1)) continue;
-        seen[k]=1; st.push(k);
+  const components = (mask, seed) => {
+    const seen = new Uint8Array(N), out = [];
+    for(let i=0; i<N; i++){
+      if(!mask[i] || seen[i]) continue;
+      let x0=1e9, y0=1e9, x1=-1, y1=-1, n=0, raw=0; const st=[i]; seen[i]=1;
+      while(st.length){
+        const j = st.pop(), x = j%gw, y = (j/gw)|0; n++; raw += seed[j];
+        if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y;
+        for(const k of [j-1, j+1, j-gw, j+gw]){
+          if(k<0 || k>=N || seen[k] || !mask[k]) continue;
+          if((k===j-1 && x===0) || (k===j+1 && x===gw-1)) continue;
+          seen[k]=1; st.push(k);
+        }
       }
+      out.push({ x0, y0, x1, y1, n, raw });
     }
-    const bw = x1-x0+1, bhh = y1-y0+1;
-    if(n < 24 || bw < gw*.12 || bhh < gh*.04 || bw*bhh < gw*gh*.012) continue;
-    if(n/(bw*bhh) < .45 || raw/n < .35) continue;     // bukan gumpalan teks yang jarang
-    regions.push({ x0, y0, x1, y1 });
+    return out;
+  };
+  const frac = (arr, r) => { let s = 0, t = 0;
+    for(let y=r.y0; y<=r.y1; y++) for(let x=r.x0; x<=r.x1; x++){ s += arr[y*gw+x]; t++; } return s/t; };
+  const cands = [];
+  // A) foto tajam: dari sel sibuk
+  for(const r of components(morph(morph(busy, true), false), busy)){
+    const bw = r.x1-r.x0+1, bhh = r.y1-r.y0+1;
+    if(r.n < 24 || bw < gw*.12 || bhh < gh*.04 || bw*bhh < N*.012) continue;
+    if(r.n/(bw*bhh) < .45 || r.raw/r.n < .35) continue;
+    cands.push({ ...r, blurred:false, texture: frac(busy, r) >= .2 && frac(tonal, r) >= .2 });
+  }
+  // B) foto buram: dari sel tonal yang padat
+  for(const r of components(morph(morph(tonal, true), false), tonal)){
+    const bw = r.x1-r.x0+1, bhh = r.y1-r.y0+1;
+    if(bw < gw*.2 || bhh < gh*.08 || bw*bhh < N*.03) continue;
+    if(r.n/(bw*bhh) >= .6 && frac(tonal, r) >= .45 && frac(busy, r) < .08) cands.push({ ...r, blurred:true, texture:true });
   }
   // rapatkan tepi: melebar selama baris/kolom di sebelahnya belum berupa warna rata UI
-  const flatRow = (x0, x1, y) => { const cnt = new Map(); let top = 0, n = 0;
-    for(let x=x0; x<=x1; x++){ const k = q((y*SW+x)*4), v = (cnt.get(k)||0)+1; cnt.set(k,v); if(v>top) top=v; n++; }
-    return top/n > .8; };
-  const flatCol = (y0, y1, x) => { const cnt = new Map(); let top = 0, n = 0;
-    for(let y=y0; y<=y1; y++){ const k = q((y*SW+x)*4), v = (cnt.get(k)||0)+1; cnt.set(k,v); if(v>top) top=v; n++; }
-    return top/n > .8; };
-  return regions.map(r => {
+  const flatLine = (pts) => { const cnt = new Map(); let top = 0;
+    for(const i of pts){ const k = q5(i), v = (cnt.get(k)||0)+1; cnt.set(k,v); if(v>top) top=v; }
+    return top/pts.length > .8; };
+  const row = (x0,x1,y) => { const a=[]; for(let x=x0;x<=x1;x++) a.push((y*SW+x)*4); return a; };
+  const col = (y0,y1,x) => { const a=[]; for(let y=y0;y<=y1;y++) a.push((y*SW+x)*4); return a; };
+  const out = [];
+  for(const r of cands){
     let X0 = r.x0*CS, Y0 = r.y0*CS, X1 = Math.min(SW-1, (r.x1+1)*CS-1), Y1 = Math.min(SH-1, (r.y1+1)*CS-1);
-    for(let k=0; k<CS*3 && Y0>0      && !flatRow(X0, X1, Y0-1); k++) Y0--;
-    for(let k=0; k<CS*3 && Y1<SH-1   && !flatRow(X0, X1, Y1+1); k++) Y1++;
-    for(let k=0; k<CS*3 && X0>0      && !flatCol(Y0, Y1, X0-1); k++) X0--;
-    for(let k=0; k<CS*3 && X1<SW-1   && !flatCol(Y0, Y1, X1+1); k++) X1++;
-    // porsi warna kulit (YCbCr) untuk mengenali foto wajah/selfie
-    let skin = 0, tot = 0;
+    for(let k=0; k<CS*3 && Y0>0    && !flatLine(row(X0, X1, Y0-1)); k++) Y0--;
+    for(let k=0; k<CS*3 && Y1<SH-1 && !flatLine(row(X0, X1, Y1+1)); k++) Y1++;
+    for(let k=0; k<CS*3 && X0>0    && !flatLine(col(Y0, Y1, X0-1)); k++) X0--;
+    for(let k=0; k<CS*3 && X1<SW-1 && !flatLine(col(Y0, Y1, X1+1)); k++) X1++;
+    // palet: ilustrasi tersusun dari sedikit warna, foto (bahkan yang buram) tersebar
+    const pal = new Map(); let skin = 0, tot = 0;
     for(let y=Y0; y<=Y1; y+=2) for(let x=X0; x<=X1; x+=2){
       const i = (y*SW+x)*4, R = d[i], G = d[i+1], B = d[i+2];
+      const k = ((R>>4)<<8) | ((G>>4)<<4) | (B>>4); pal.set(k, (pal.get(k)||0)+1);
       const cb = 128 - .168736*R - .331264*G + .5*B, cr = 128 + .5*R - .418688*G - .081312*B;
       tot++; if(cb >= 77 && cb <= 127 && cr >= 137 && cr <= 173 && R > 60) skin++;
     }
-    return { x:X0/SW, y:Y0/SH, w:(X1-X0+1)/SW, h:(Y1-Y0+1)/SH, skin: tot ? skin/tot : 0 };
-  });
+    const top12 = [...pal.values()].sort((a,b)=>b-a).slice(0,12).reduce((a,b)=>a+b, 0) / Math.max(1, tot);
+    // Wilayah yang gagal uji foto tetap disimpan dengan photo:false — misalnya kartu KTP
+    // digital yang bersih tanpa noise kamera. Wilayah seperti itu hanya boleh dianggap
+    // KTP bila di dalamnya terbaca kata-kata khas KTP (lihat classifyPhoto).
+    const photo = r.texture && top12 <= (r.blurred ? .8 : .64);
+    if(!photo && r.blurred) continue;
+    const p = { x:X0/SW, y:Y0/SH, w:(X1-X0+1)/SW, h:(Y1-Y0+1)/SH, skin: tot ? skin/tot : 0, photo };
+    if(!out.some(o => overlapRatio(p, o) > .6)) out.push(p);
+  }
+  return out;
 }
 const KTP_WORDS = new Set(['provinsi','kabupaten','kota','nik','nama','tempat','lahir','tgl','jenis','kelamin',
   'alamat','agama','kewarganegaraan','berlaku','hingga','golongan','darah','gol','pekerjaan','perkawinan',
   'kecamatan','kel','desa','rt','rw','wni','seumur','hidup']);
 const KTP_HINT    = ['ktp','ektp','identitas','kartu'];
 const SELFIE_HINT = ['selfie','swafoto','wajah','face','liveness','diri'];
-// Klasifikasi foto: KTP bila di dalamnya terbaca kata-kata khas KTP atau judul di
-// dekatnya menyebut KTP; selfie bila judulnya menyebut selfie/wajah atau porsi warna
-// kulitnya besar. Satu foto bisa masuk dua kelas (misalnya selfie memegang KTP).
-function classifyPhoto(p, words, W, H){
-  const inside = new Set(), near = [];
+// Klasifikasi foto: KTP bila di dalamnya terbaca kata-kata khas KTP, atau judul di
+// dekatnya / judul layar menyebut KTP; selfie bila judulnya menyebut selfie/wajah
+// atau porsi warna kulitnya besar. Satu foto bisa masuk dua kelas.
+function classifyPhoto(p, words, W, H, solo){
+  const inside = new Set(), near = [], title = [];
   for(const w of words){
     const cx = (w.b.x0+w.b.x1)/2/W, cy = (w.b.y0+w.b.y1)/2/H;
+    if(cy < .1) title.push(...toks(w.t));
     const inX = cx >= p.x && cx <= p.x+p.w, inY = cy >= p.y && cy <= p.y+p.h;
     if(inX && inY){ toks(w.t).forEach(t=>{ if(KTP_WORDS.has(conf(t))) inside.add(conf(t)); }); continue; }
     const overlapX = cx >= p.x - .05 && cx <= p.x + p.w + .05;
     if(overlapX && ((cy < p.y && p.y - cy < .07) || (cy > p.y+p.h && cy - p.y - p.h < .035)))
       near.push(...toks(w.t));
   }
+  const hint = list => near.some(t=>list.includes(t)) || (solo && title.some(t=>list.includes(t)));
   const cls = new Set();
+  if(!p.photo) return inside.size >= 3 ? new Set(['ktpPhoto']) : cls;   // ilustrasi/render: hanya kartu KTP bertulisan
   // Cadangan untuk foto KTP kecil yang teksnya tidak terbaca dan tanpa judul: proporsi
-  // kartu identitas ISO ID-1 (85,6 × 54 mm ≈ 1,586) ditambah salah satu ciri kartu —
-  // ada kata khas KTP di dalamnya, atau pas foto kecil (sedikit warna kulit).
+  // kartu identitas ISO ID-1 (≈1,586) ditambah ciri kartu.
   const ar = (p.w*W) / Math.max(1, p.h*H);
   const cardShape = Math.abs(ar - 1.586) / 1.586 < .12;
-  if(inside.size >= 3 || near.some(t=>KTP_HINT.includes(t)) ||
+  if(inside.size >= 3 || hint(KTP_HINT) ||
      (cardShape && (inside.size >= 1 || (p.skin > .01 && p.skin < .2)))) cls.add('ktpPhoto');
-  if(near.some(t=>SELFIE_HINT.includes(t)) || p.skin >= .10) cls.add('selfie');
+  if(hint(SELFIE_HINT) || p.skin >= .15) cls.add('selfie');
   if(!cls.size) cls.add('otherPhoto');
   return cls;
 }
@@ -1771,34 +1841,41 @@ function classifyPhoto(p, words, W, H){
 function detect(item, cats){
   const ocr = item._ocr, W = ocr.w, H = ocr.h, found = [];
   const lines = ocr.lines, words = lines.flat();
-  // foto
   if(PHOTO_CATS.some(c=>cats[c])){
-    for(const p of item._photos || []){
-      const cls = classifyPhoto(p, words, W, H);
+    const photos = item._photos || [];
+    const solo = photos.filter(p=>p.photo).length === 1;
+    for(const p of photos){
+      const cls = classifyPhoto(p, words, W, H, solo);
       const cat = [...cls].find(c=>cats[c]);
-      if(cat) found.push({ x:clamp(p.x-.004,0,1), y:clamp(p.y-.003,0,1),
-        w:Math.min(p.w+.008, 1-clamp(p.x-.004,0,1)), h:Math.min(p.h+.006, 1-clamp(p.y-.003,0,1)),
-        s:'red', auto:true, cat });
+      if(cat){
+        const x = clamp(p.x-.004,0,1), y = clamp(p.y-.003,0,1);
+        found.push({ x, y, w:Math.min(p.w+.008, 1-x), h:Math.min(p.h+.006, 1-y), s:'red', auto:true, cat });
+      }
     }
   }
-  // label → nilai
   const labs = findLabels(lines);
   const labelWords = new Set();
   labs.forEach(l => lines[l.li].slice(l.first, l.nw).forEach(w=>labelWords.add(w)));
+  const txt = ws => ws.map(w=>w.t).join(' ');
+  const clean = ws => {
+    const k = ws.filter(w => /[a-z0-9]/i.test(w.t));
+    if(k.length < 2) return k;
+    const med = k.map(w=>bh(w.b)).sort((a,b)=>a-b)[k.length>>1];
+    return k.filter(w => bh(w.b) <= med*1.8);
+  };
   for(const lab of labs){
     if(!lab.L.cats.some(c=>cats[c])) continue;
-    const val = labelValue(lab, lines, labelWords, W);
+    const val = clean(labelValue(lab, lines, labelWords, W));
     if(!val.length) continue;
     if(lab.L.split){
       const isDate = w => /\d/.test(w.t) || new RegExp('^('+MONTHS+')', 'i').test(w.t);
       const dob = val.filter(isDate), pob = val.filter(w=>!isDate(w));
-      if(cats.dob && dob.length) found.push(mkAuto(unionBox(dob.map(w=>w.b)), W, H, 'dob'));
-      if(cats.pob && pob.length) found.push(mkAuto(unionBox(pob.map(w=>w.b)), W, H, 'pob'));
+      if(cats.dob && dob.length) found.push(mkAuto(unionBox(dob.map(w=>w.b)), W, H, 'dob', txt(dob)));
+      if(cats.pob && pob.length) found.push(mkAuto(unionBox(pob.map(w=>w.b)), W, H, 'pob', txt(pob)));
     }else{
-      found.push(mkAuto(unionBox(val.map(w=>w.b)), W, H, lab.L.cats[0]));
+      found.push(mkAuto(unionBox(val.map(w=>w.b)), W, H, lab.L.cats[0], txt(val)));
     }
   }
-  // pola, per baris dengan koreksi huruf-mirip-angka
   for(const ws of lines){
     let text = ''; const spans = [];
     ws.forEach((w,i)=>{ if(i) text += ' '; const s = text.length; text += digitFix(w.t); spans.push({ s, e:text.length, b:w.b }); });
@@ -1809,12 +1886,35 @@ function detect(item, cats){
         while((m = pat.re.exec(text)) !== null){
           if(pat.ok && !pat.ok(m[0])) continue;
           const b = unionBox(spans.filter(sp=>sp.e > m.index && sp.s < m.index + m[0].length).map(sp=>sp.b));
-          if(b) found.push(mkAuto(b, W, H, cat));
+          if(b) found.push(mkAuto(b, W, H, cat, m[0]));
         }
       }
     }
   }
-  return dedupe(found);
+  return found;
+}
+// Cari ulang nilai yang sudah ketemu (dari gambar mana pun) sebagai rangkaian kata utuh.
+// Kata huruf (≥ 4 huruf) boleh selisih satu karakter karena OCR di atas gambar kartu
+// atau latar bertekstur kerap salah baca satu huruf ("Dianz"); angka harus persis.
+const normVal = t => String(t).toLowerCase().replace(/[^a-z0-9@.]+/g,' ').replace(/\s+/g,' ').trim();
+const wordEq = (a, b) => a === b || (/^[a-z]{4,}$/.test(a) && /^[a-z]{4,}$/.test(b) && lev1(a, b));
+function propagate(item, values){
+  const ocr = item._ocr, W = ocr.w, H = ocr.h, found = [];
+  if(!values.length) return found;
+  for(const ws of ocr.lines){
+    const tk = [];                                   // token bermakna + kata asalnya
+    ws.forEach(w => normVal(w.t).split(' ').filter(Boolean).forEach(t => tk.push({ t, w })));
+    for(let s=0; s<tk.length; s++){
+      for(const v of values){
+        const n = v.words.length;
+        if(s + n > tk.length) continue;
+        if(!v.words.every((vw, k) => wordEq(tk[s+k].t, vw))) continue;
+        const keep = [...new Set(tk.slice(s, s+n).map(x=>x.w))];
+        found.push(mkAuto(unionBox(keep.map(w=>w.b)), W, H, v.cat, v.words.join(' ')));
+      }
+    }
+  }
+  return found;
 }
 
 /* ---------- pemindaian ---------- */
@@ -1838,8 +1938,13 @@ async function getWorker(){
   await _worker.setParameters({ tessedit_pageseg_mode: window.__PSM || '11', user_defined_dpi:'300' });
   return _worker;
 }
-// Gambar untuk OCR: skala ~1400–1800 px, abu-abu, dibalik bila latarnya gelap
-// (dark mode), lalu kontrasnya direntangkan supaya label abu-abu muda terbaca.
+/* Gambar untuk OCR: skala ~1400–1800 px, lalu NORMALISASI KONTRAS LOKAL — tiap
+   piksel dibandingkan dengan rata-rata sekitarnya, bukan satu ambang untuk seluruh
+   layar. Ambang global (bawaan Tesseract) menghapus label abu-abu muda bila di layar
+   yang sama ada teks hitam, dan gagal total di area yang diredupkan overlay. Teks
+   terang di atas latar gelap (header, tombol, dark mode) dibalik jadi gelap.
+   Sengaja tidak dibinerisasi keras: pada screenshot JPEG, ambang keras membuat huruf
+   di area redup berbayang ganda; normalisasi mempertahankan tepi huruf yang halus. */
 function ocrCanvas(item){
   const w = item.w < OCR_MIN_W ? OCR_MIN_W : Math.min(OCR_MAX_W, item.w);
   const h = Math.round(item.h * (w/item.w));
@@ -1848,17 +1953,50 @@ function ocrCanvas(item){
   ctx.fillStyle = '#fff'; ctx.fillRect(0,0,w,h);
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(item._img, 0, 0, w, h);   // dari gambar asli, bukan yang sudah disensor
-  const im = ctx.getImageData(0,0,w,h), d = im.data, hist = new Uint32Array(256);
-  let sum = 0;
-  for(let i=0; i<d.length; i+=4){ const g = (d[i]*299 + d[i+1]*587 + d[i+2]*114)/1000 | 0; d[i] = g; hist[g]++; sum += g; }
-  const n = d.length/4, inv = sum/n < 110;
-  let lo = 0, hi = 255, acc = 0;
-  for(let v=0; v<256; v++){ acc += hist[v]; if(acc > n*.01){ lo = v; break; } }
-  acc = 0; for(let v=255; v>=0; v--){ acc += hist[v]; if(acc > n*.01){ hi = v; break; } }
-  const span = Math.max(1, hi-lo);
-  for(let i=0; i<d.length; i+=4){
-    let g = clamp((d[i]-lo)*255/span, 0, 255); if(inv) g = 255-g;
-    d[i] = d[i+1] = d[i+2] = g;
+  const im = ctx.getImageData(0,0,w,h), d = im.data;
+  const g = new Uint8Array(w*h);
+  for(let i=0, j=0; j<g.length; i+=4, j++) g[j] = (d[i]*299 + d[i+1]*587 + d[i+2]*114)/1000;
+  const I = new Uint32Array((w+1)*(h+1));             // integral image
+  for(let y=0; y<h; y++){
+    let run = 0;
+    for(let x=0; x<w; x++){ run += g[y*w+x]; I[(y+1)*(w+1)+x+1] = I[y*(w+1)+x+1] + run; }
+  }
+  // Polaritas per blok 32 px: warna mayoritas blok adalah latarnya. Bila latar lebih
+  // terang dari rata-rata, teksnya gelap (halaman biasa, area redup overlay); bila
+  // lebih gelap, teksnya terang (header, tombol, dark mode).
+  const B = 32, bw = Math.ceil(w/B), bhN = Math.ceil(h/B), pol0 = new Uint8Array(bw*bhN);
+  for(let by=0; by<bhN; by++) for(let bx=0; bx<bw; bx++){
+    const hist = new Uint16Array(32), bsum = new Uint32Array(32); let sum = 0, n = 0;
+    for(let y=by*B; y<Math.min(h,(by+1)*B); y++) for(let x=bx*B; x<Math.min(w,(bx+1)*B); x++){
+      const v = g[y*w+x]; hist[v>>3]++; bsum[v>>3] += v; sum += v; n++;
+    }
+    let mb = 0; for(let k=1; k<32; k++) if(hist[k] > hist[mb]) mb = k;
+    // nilai latar = rata-rata piksel di bin terbanyak (bukan titik tengah bin, yang
+    // membuat blok putih murni tampak "lebih gelap dari rata-rata")
+    const mode = bsum[mb]/hist[mb], mean = sum/n;
+    // 2 = belum pasti: blok tanpa teks tidak ikut menentukan polaritas. Tanpa ini,
+    // latar area redup (< 110) dikira "latar gelap, teks terang" dan merusak huruf.
+    pol0[by*bw+bx] = Math.abs(mode - mean) < 4 ? 2 : (mode < mean ? 1 : 0);
+  }
+  const pol = new Uint8Array(bw*bhN);               // mayoritas blok bertulisan dalam 5×5
+  for(let by=0; by<bhN; by++) for(let bx=0; bx<bw; bx++){
+    let light = 0, dark = 0;
+    for(let dy=-2; dy<=2; dy++) for(let dx=-2; dx<=2; dx++){
+      const yy = by+dy, xx = bx+dx; if(yy<0||yy>=bhN||xx<0||xx>=bw) continue;
+      const v = pol0[yy*bw+xx]; if(v === 1) light++; else if(v === 0) dark++;
+    }
+    pol[by*bw+bx] = light > dark ? 1 : 0;
+  }
+  const r = Math.max(8, Math.round(w*.02)), GAIN = 4;
+  for(let y=0; y<h; y++){
+    const y0 = Math.max(0, y-r), y1 = Math.min(h, y+r+1), prow = ((y/B)|0)*bw;
+    for(let x=0; x<w; x++){
+      const x0 = Math.max(0, x-r), x1 = Math.min(w, x+r+1);
+      const m = (I[y1*(w+1)+x1] - I[y0*(w+1)+x1] - I[y1*(w+1)+x0] + I[y0*(w+1)+x0]) / ((y1-y0)*(x1-x0));
+      const v = g[y*w+x];
+      const o = pol[prow + ((x/B)|0)] ? 255 - (v - m)*GAIN : 255 + (v - m)*GAIN;
+      const k = (y*w+x)*4; d[k] = d[k+1] = d[k+2] = o < 0 ? 0 : o > 255 ? 255 : o;
+    }
   }
   ctx.putImageData(im, 0, 0);
   return c;
@@ -1878,9 +2016,9 @@ async function scanAll(force){
       const it = todo[i], c = ocrCanvas(it);
       const { data } = await wk.recognize(c);
       it._ocr = { w:c.width, h:c.height,
-        lines: (data.lines || []).map((l, li) => (l.words || [])
+        lines: (data.lines || []).map(l => (l.words || [])
           .filter(x => String(x.text).trim())
-          .map(x => ({ t:x.text, b:x.bbox, li }))).filter(ws => ws.length) };
+          .map(x => ({ t:x.text, b:x.bbox }))).filter(ws => ws.length) };
       it._ocr.lines.forEach((ws, li) => ws.forEach(w => { w.li = li; }));
       it._photos = findPhotos(it);
     }
@@ -1893,14 +2031,29 @@ async function scanAll(force){
   applyAuto(true);
 }
 /* Menyusun ulang kotak: yang manual selalu dipertahankan, yang otomatis diturunkan
-   ulang dari hasil analisis yang sudah tersimpan. */
+   ulang dari hasil analisis yang sudah tersimpan. Dua tahap: deteksi per gambar,
+   lalu nilai yang ditemukan dicari ulang di semua gambar. */
 function applyAuto(report){
   let total = 0, imgs = 0;
+  const per = new Map(), seen = new Set(), values = [];
+  if(S.auto.on){
+    for(const it of S.items){
+      if(!it._ocr) continue;
+      const f = detect(it, S.auto.cats);
+      per.set(it, f);
+      for(const b of f){
+        if(!b.val || !PROPAGATE.includes(b.cat)) continue;
+        const v = normVal(b.val);
+        if(v.replace(/[^a-z0-9]/g,'').length >= 4 && !seen.has(v)){ seen.add(v); values.push({ words:v.split(' '), cat:b.cat }); }
+      }
+    }
+  }
   S.items.forEach(it=>{
     const manual = (it.red || []).filter(b=>!b.auto);
     let next = manual;
     if(S.auto.on && it._ocr){
-      const found = detect(it, S.auto.cats).filter(b => !manual.some(m => overlapRatio(b,m) > 0.6));
+      const found = dedupe((per.get(it) || []).concat(propagate(it, values)))
+        .filter(b => !manual.some(m => overlapRatio(b,m) > 0.6));
       if(found.length){ imgs++; total += found.length; }
       next = manual.concat(found);
     }

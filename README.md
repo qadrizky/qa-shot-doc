@@ -84,7 +84,10 @@ tepinya dirapatkan ke batas foto sebenarnya. Satu foto bisa masuk dua kelas
 (misalnya selfie sambil memegang KTP) dan tertutup bila salah satunya dicentang.
 
 **Data teks** — NIK, tempat lahir, tanggal lahir, nama ibu kandung, nama lengkap,
-NPWP, no. HP, email, no. rekening/kartu, alamat. Dua lapis:
+NPWP, no. HP, email, password, no. rekening/kartu, alamat. Label dikenali dalam
+bahasa Indonesia maupun Inggris (`Identity Card Number`, `Mother's Name as per
+Kartu Keluarga`, `Place of Birth`, `Name on Card`, `Mobile Banking Password`, …).
+Tiga lapis:
 
 - **Label** — label seperti `NIK`, `Tempat Lahir`, `Tempat/Tgl Lahir`,
   `Nama Ibu Kandung` dikenali (toleran terhadap salah baca OCR seperti `NlK`),
@@ -94,14 +97,28 @@ NPWP, no. HP, email, no. rekening/kartu, alamat. Dua lapis:
   *tanggal lahir*, jadi masing-masing bisa dicentang sendiri.
   Sebuah teks dianggap label hanya bila berdiri sendiri, sehingga kalimat seperti
   "Masukkan NIK sesuai KTP" atau "Nama Produk" tidak ikut memicu sensor.
+- **Pencarian ulang** — nilai yang sudah ditemukan (nama, nama ibu, NIK, email,
+  no. HP, password) dicari lagi di **semua** screenshot, karena data yang sama sering
+  muncul ulang tanpa label: nama tercetak di gambar kartu debit, di bottom sheet
+  konfirmasi, atau di halaman review. Toleran terhadap salah baca satu huruf pada
+  kata; angka harus persis.
 - **Pola** — dengan penyaring agar tidak menyensor data yang bukan milik pribadi:
   - NIK harus lolos struktur NIK (kode provinsi 11–94 dan tanggal lahir yang sah
     di digit 7–12), jadi ID transaksi 16 digit tidak ikut tertutup.
   - Tanggal hanya dianggap tanggal lahir bila tahunnya masuk akal untuk
     kelahiran, jadi tanggal transaksi/pengajuan tidak ikut tertutup.
 
-Sebelum OCR, gambar diubah ke abu-abu, dibalik bila dark mode, dan kontrasnya
-direntangkan agar label abu-abu muda terbaca.
+Sebelum OCR, gambar dinormalisasi **kontras lokal**: setiap piksel dibandingkan
+dengan sekitarnya, bukan dengan satu ambang untuk seluruh layar. Tanpa ini, label
+abu-abu muda hilang bila di layar yang sama ada teks hitam, dan area yang
+diredupkan overlay (bottom sheet, dialog) tidak terbaca sama sekali. Polaritas
+ditentukan per blok, sehingga teks putih di header merah, tombol, dan dark mode
+ikut terbaca.
+
+Foto dibedakan dari **ilustrasi dan render**: pada screenshot JPEG, maskot dan
+gambar kartu debit juga tampak bertekstur. Foto asli punya porsi gradasi besar dan
+palet warna yang tersebar; ilustrasi tersusun dari sedikit warna rata. Foto yang
+buram (misalnya wajah di layar verifikasi) dideteksi lewat jalur terpisah.
 
 Hasil analisis disimpan per gambar, jadi mengubah checklist berlaku seketika
 tanpa memindai ulang. Mematikan toggle hanya menghapus kotak otomatis — kotak
@@ -114,21 +131,38 @@ tidak ada gambar yang dikirim ke layanan mana pun. Unduhan pertama sekitar
 
 ### Hasil pengujian
 
-Diukur pada 7 layar uji sintetis (form terang, form gelap, review dua kolom,
-unggah KTP + selfie + banner, foto kamera KTP, scan KTP, KTP kecil tanpa judul):
+**Screenshot nyata.** Aturan deteksi dikalibrasi dan diuji pada 33 screenshot
+alur pembukaan rekening sebuah aplikasi perbankan (bahasa Inggris, JPEG 1080×2400,
+berisi foto e-KTP dari kamera, verifikasi wajah, overlay redup, halaman review dua
+kolom). Lokasi setiap data sensitif ditandai manual sebagai ground truth — 26 area
+di 11 layar — lalu dibandingkan dengan hasil deteksi:
+
+| | Versi sebelumnya | Sekarang |
+|---|---|---|
+| Area sensitif tertutup | 11/26 | **26/26** |
+| Layar dengan area yang salah tersensor | 4/33 | **0/33** |
+| Kategori tidak dicentang ikut tersensor | — | **0** (diuji dengan 4 kombinasi checklist) |
+
+Data screenshot tersebut tidak disertakan di repo ini.
+
+**Layar sintetis.** Untuk memastikan tidak ada regresi di luar kasus di atas
+(label bahasa Indonesia, dark mode, KTP digital yang bersih), juga diuji pada 7
+layar buatan (form terang, form gelap, review dua kolom, unggah KTP + selfie +
+banner, foto kamera KTP, scan KTP, KTP kecil tanpa judul):
 
 | Konfigurasi | Target tertutup | Tersensor padahal tidak boleh |
 |---|---|---|
-| Versi sebelumnya | 20/26 | 6/31 |
 | Default (foto + teks) | 27/27 | 0/31 |
-| Hanya teks (NIK, tempat/tgl lahir, ibu) | 15/15 | 0/42 |
-| Hanya foto (KTP + selfie) | 4/4 | 0/49 |
+| Hanya teks (NIK, tempat/tgl lahir, ibu) | 15/15 | 0/44 |
+| Hanya foto (KTP + selfie) | 5/5 | 0/50 |
+
+Waktu pindai sekitar 1–5 detik per screenshot tergantung perangkat.
 
 "Tidak boleh" mencakup label, tanggal pengajuan, ID transaksi 16 digit, banner
 promo, dan semua kategori yang tidak dicentang.
 
-**Batasannya, dan ini penting.** Layar uji di atas buatan sendiri; screenshot
-nyata lebih beragam. Deteksi otomatis adalah **kandidat, bukan jaminan** — OCR
+**Batasannya, dan ini penting.** Kalibrasi di atas memakai satu aplikasi; app lain
+punya font, layout, dan istilah label sendiri. Deteksi otomatis adalah **kandidat, bukan jaminan** — OCR
 bisa meleset pada teks kecil, kontras rendah, atau font tidak biasa, dan satu NIK
 yang lolos lebih berbahaya daripada tidak ada deteksi sama sekali, karena membuat
 orang berhenti memeriksa. Sensor manual selalu tersedia sebagai jaring pengaman.
