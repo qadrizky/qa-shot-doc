@@ -62,39 +62,76 @@ canvas, metadata EXIF (lokasi GPS, model perangkat) ikut hilang dari file hasil.
 Catatan: **blok hitam paling aman**. Blur dan pixel menyisakan pola samar yang
 secara teori masih bisa diserang untuk teks pendek berformat tetap seperti NIK.
 
-## Sensor otomatis (OCR)
+## Sensor otomatis
 
-Toggle **Sensor otomatis** di panel pengaturan menyalakan pengenalan teks dan
-menutup data sensitif yang ditemukan. Kategorinya bisa dipilih lewat checklist:
-NIK, NPWP, tanggal lahir, tempat lahir, nama ibu kandung, nama lengkap, no. HP,
-email, no. rekening/kartu, dan alamat.
+Toggle **Sensor otomatis** di panel pengaturan menyalakan deteksi, dan checklist
+menentukan apa saja yang ditutup. Checklist dibagi dua:
 
-Cara kerjanya dua lapis:
+**Foto** — ditutup penuh sesuai batas fotonya:
 
-- **Pola** — NIK (16 digit, termasuk yang ditulis berspasi), NPWP, tanggal,
-  nomor HP, email, nomor rekening.
-- **Label** — baris seperti `Nama Ibu Kandung`, `Tempat/Tgl Lahir`, atau
-  `Alamat` dikenali, lalu **nilainya** yang ditutup, bukan labelnya. Nilai yang
-  berada di baris berikutnya (layout form di HP) juga tertangani.
+- *Foto KTP* — dikenali dari kata khas KTP yang terbaca di dalam foto (PROVINSI,
+  NIK, Tempat/Tgl Lahir, dst.), judul di dekatnya yang menyebut KTP, atau proporsi
+  kartu identitas (≈1,586) disertai pas foto kecil — sehingga foto KTP kecil yang
+  buram dan tanpa judul tetap tertangkap.
+- *Foto selfie / wajah* — judul di dekatnya menyebut selfie/wajah, atau porsi
+  warna kulitnya besar.
+- *Semua foto lain* — foto yang bukan KTP/selfie (banner, produk). Mati secara
+  bawaan.
 
-Hasil OCR disimpan per gambar, jadi mengubah pilihan kategori berlaku seketika
+Foto dideteksi lewat analisis piksel, bukan OCR: tampilan aplikasi terdiri dari
+warna rata dan teks, sedangkan foto bertekstur. Wilayah bertekstur digabung, lalu
+tepinya dirapatkan ke batas foto sebenarnya. Satu foto bisa masuk dua kelas
+(misalnya selfie sambil memegang KTP) dan tertutup bila salah satunya dicentang.
+
+**Data teks** — NIK, tempat lahir, tanggal lahir, nama ibu kandung, nama lengkap,
+NPWP, no. HP, email, no. rekening/kartu, alamat. Dua lapis:
+
+- **Label** — label seperti `NIK`, `Tempat Lahir`, `Tempat/Tgl Lahir`,
+  `Nama Ibu Kandung` dikenali (toleran terhadap salah baca OCR seperti `NlK`),
+  lalu **nilainya** yang ditutup berdasarkan posisi: di kanan pada baris yang sama
+  (halaman review dua kolom) atau tepat di bawahnya (floating label di form HP).
+  Label gabungan `Tempat/Tgl Lahir` dipecah: kota ke *tempat lahir*, tanggal ke
+  *tanggal lahir*, jadi masing-masing bisa dicentang sendiri.
+  Sebuah teks dianggap label hanya bila berdiri sendiri, sehingga kalimat seperti
+  "Masukkan NIK sesuai KTP" atau "Nama Produk" tidak ikut memicu sensor.
+- **Pola** — dengan penyaring agar tidak menyensor data yang bukan milik pribadi:
+  - NIK harus lolos struktur NIK (kode provinsi 11–94 dan tanggal lahir yang sah
+    di digit 7–12), jadi ID transaksi 16 digit tidak ikut tertutup.
+  - Tanggal hanya dianggap tanggal lahir bila tahunnya masuk akal untuk
+    kelahiran, jadi tanggal transaksi/pengajuan tidak ikut tertutup.
+
+Sebelum OCR, gambar diubah ke abu-abu, dibalik bila dark mode, dan kontrasnya
+direntangkan agar label abu-abu muda terbaca.
+
+Hasil analisis disimpan per gambar, jadi mengubah checklist berlaku seketika
 tanpa memindai ulang. Mematikan toggle hanya menghapus kotak otomatis — kotak
 manual tetap. Kotak otomatis yang kamu geser atau ubah ukurannya berubah status
 jadi manual, supaya tidak ikut terhapus saat toggle dimatikan.
 
 Semuanya berjalan lokal: Tesseract di-host sendiri di `vendor/tesseract/`,
-tidak ada gambar yang dikirim ke layanan OCR mana pun. Unduhan pertama sekitar
+tidak ada gambar yang dikirim ke layanan mana pun. Unduhan pertama sekitar
 6 MB lalu tersimpan di cache browser.
 
-**Batasannya, dan ini penting.** Deteksi otomatis adalah **kandidat, bukan
-jaminan**. OCR bisa meleset pada teks kecil, kontras rendah, atau font tidak
-biasa — dan satu NIK yang lolos lebih berbahaya daripada tidak ada deteksi sama
-sekali, karena membuat orang berhenti memeriksa. Perlakukan fitur ini sebagai
-pemercepat, bukan pengganti pemeriksaan mata. Sensor manual selalu tersedia
-sebagai jaring pengaman.
+### Hasil pengujian
 
-Foto wajah/KTP tidak dideteksi otomatis — deteksi wajah di browser tidak andal.
-Tutup dengan kotak manual.
+Diukur pada 7 layar uji sintetis (form terang, form gelap, review dua kolom,
+unggah KTP + selfie + banner, foto kamera KTP, scan KTP, KTP kecil tanpa judul):
+
+| Konfigurasi | Target tertutup | Tersensor padahal tidak boleh |
+|---|---|---|
+| Versi sebelumnya | 20/26 | 6/31 |
+| Default (foto + teks) | 27/27 | 0/31 |
+| Hanya teks (NIK, tempat/tgl lahir, ibu) | 15/15 | 0/42 |
+| Hanya foto (KTP + selfie) | 4/4 | 0/49 |
+
+"Tidak boleh" mencakup label, tanggal pengajuan, ID transaksi 16 digit, banner
+promo, dan semua kategori yang tidak dicentang.
+
+**Batasannya, dan ini penting.** Layar uji di atas buatan sendiri; screenshot
+nyata lebih beragam. Deteksi otomatis adalah **kandidat, bukan jaminan** — OCR
+bisa meleset pada teks kecil, kontras rendah, atau font tidak biasa, dan satu NIK
+yang lolos lebih berbahaya daripada tidak ada deteksi sama sekali, karena membuat
+orang berhenti memeriksa. Sensor manual selalu tersedia sebagai jaring pengaman.
 
 Fitur ini perlu halaman yang dibuka lewat **http/https**. Saat `index.html`
 dibuka langsung dari disk (`file://`), browser memblokir worker OCR sehingga
