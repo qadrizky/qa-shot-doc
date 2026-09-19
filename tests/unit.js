@@ -116,16 +116,16 @@
     expect(tall.h).toBe(250); expect(tall.w).toBe(25);
   });
   test('unit', 'Layout menaruh sejumlah kolom yang dipilih per baris', () => {
-    const S = app().S, saved = { items:S.items, cols:S.opts.cols };
+    const state = app().state, saved = { items:state.items, cols:state.opts.cols };
     try{
-      S.items = Array.from({ length:5 }, (_, i) => ({ id:900 + i, w:1080, h:2400, name:'x.png', red:[] }));
-      S.opts.cols = 3;
+      state.items = Array.from({ length:5 }, (_, i) => ({ id:900 + i, w:1080, h:2400, name:'x.png', red:[] }));
+      state.opts.cols = 3;
       // baris = halaman + posisi vertikal (baris kedua bisa pindah ke halaman berikutnya)
       const rows = app().computeLayout().flatMap((p, n) => p.blocks.filter(b => b.type === 'img').map(b => n + ':' + b.y));
       expect(rows.length).toBe(5);
       expect(rows.filter(r => r === rows[0]).length).toBe(3);
       expect(rows.filter(r => r === rows[3]).length).toBe(2);
-    }finally{ S.items = saved.items; S.opts.cols = saved.cols; }
+    }finally{ state.items = saved.items; state.opts.cols = saved.cols; }
   });
   test('unit', 'Blok merah dibakar ke piksel gambar hasil', () => {
     const img = document.createElement('canvas'); img.width = 100; img.height = 200;

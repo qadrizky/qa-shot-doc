@@ -772,7 +772,8 @@ function(r){"object"==typeof e&&void 0!==t?t.exports=r():"function"==typeof defi
 "use strict";
 
 /* ====================== konstanta & state ====================== */
-const MM       = 96/25.4;            // 1 mm dalam px CSS
+const CSS_DPI  = 96, MM_PER_INCH = 25.4;
+const MM       = CSS_DPI/MM_PER_INCH; // 1 mm dalam px CSS
 const PT2MM    = 0.352778;           // 1 pt dalam mm
 const CAP_PT   = 8;                  // ukuran font caption
 const CAP_LH   = CAP_PT*PT2MM*1.35;  // tinggi baris caption (mm)
@@ -781,8 +782,12 @@ const TWIP     = 56.6929;            // 1 mm dalam twip (DOCX)
 const SIZES    = { a4:[210,297], letter:[215.9,279.4], a5:[148,210] };
 const DISPLAY_W = 900;               // lebar maksimum gambar pratinjau (px)
 const REDACT_RED = '#e01b1b';        // warna blok sensor
+const PREVIEW_JPEG = 0.9, EXPORT_JPEG = 0.92;   // kualitas JPEG pratinjau / file hasil
+const TOAST_MS = 2400;               // lama pesan singkat tampil
+const RESIZE_DEBOUNCE_MS = 120, CAPTION_DEBOUNCE_MS = 220;
+const HIDDEN_RETRY_MS = 400;         // cek ulang saat area kerja belum punya lebar
 
-const S = {
+const state = {
   items: [],
   view: 'page',
   viewLocked: false,       // true setelah pengguna memilih mode sendiri
@@ -855,11 +860,11 @@ function wrapText(text, widthMm, pt){
   return { lines:pdf, count:Math.max(pdf.length, canvas.length) };
 }
 function pageDims(){
-  const [w,h] = SIZES[S.opts.size];
-  return S.opts.orient === 'landscape' ? [h,w] : [w,h];
+  const [w,h] = SIZES[state.opts.size];
+  return state.opts.orient === 'landscape' ? [h,w] : [w,h];
 }
 function metaLines(){
-  const m = S.meta, out = [];
+  const m = state.meta, out = [];
   if(m.tester) out.push('Tester: '+m.tester);
   if(m.date)   out.push('Tanggal: '+m.date);
   if(m.device) out.push('Perangkat: '+m.device);
@@ -867,20 +872,23 @@ function metaLines(){
   return out;
 }
 function headerH(){
-  if(!S.opts.header) return 0;
-  const hasTitle = !!S.meta.title, lines = metaLines();
+  if(!state.opts.header) return 0;
+  const hasTitle = !!state.meta.title, lines = metaLines();
   if(!hasTitle && !lines.length) return 0;
   return (hasTitle ? 7 : 0) + lines.length*4.2 + 3;
 }
-const needCap = () => S.opts.cap || S.opts.num;
-function numPrefix(i){ return S.opts.num ? (i+1)+'. ' : ''; }
-function capText(i, it){ return numPrefix(i) + (S.opts.cap ? (it.caption||'') : ''); }
+const needCap = () => state.opts.cap || state.opts.num;
+function numPrefix(i){ return state.opts.num ? (i+1)+'. ' : ''; }
+function capText(i, it){ return numPrefix(i) + (state.opts.cap ? (it.caption||'') : ''); }
 
+let toastTimer = 0;
 function toast(msg){
   const t = $('#toast'); t.textContent = msg; t.classList.add('on');
-  clearTimeout(toast._t); toast._t = setTimeout(()=>t.classList.remove('on'), 2400);
+  clearTimeout(toastTimer); toastTimer = setTimeout(()=>t.classList.remove('on'), TOAST_MS);
 }
-function veil(on, msg){ $('#veilText').textContent = msg||'Memproses…'; $('#veil').classList.toggle('on', !!on); }
+// Lapisan "sedang memproses" yang menutup layar selama kerja berat.
+function showBusy(msg){ $('#veilText').textContent = msg; $('#veil').classList.add('on'); }
+function hideBusy(){ $('#veil').classList.remove('on'); }
 // Beri kesempatan browser repaint sebelum kerja berat. setTimeout (bukan rAF) supaya
 // tetap jalan ketika tab sedang tidak terlihat.
 const yieldUI = () => new Promise(r=>setTimeout(r,20));
@@ -933,7 +941,7 @@ function redactedCanvas(item, width, boxes = item.red){
 function displaySrc(item){
   if(!hasRed(item)) return item.dataURL;
   if(item._dispRev === item._rev && item._disp) return item._disp;
-  item._disp = redactedCanvas(item, Math.min(DISPLAY_W, item.w)).toDataURL('image/jpeg', 0.9);
+  item._disp = redactedCanvas(item, Math.min(DISPLAY_W, item.w)).toDataURL('image/jpeg', PREVIEW_JPEG);
   item._dispRev = item._rev;
   return item._disp;
 }
@@ -941,7 +949,7 @@ function displaySrc(item){
 /* ====================== mesin layout ======================
    Satu sumber kebenaran: dipakai preview, PDF, dan DOCX. Semua satuan mm. */
 function gridGeometry(){
-  const o = S.opts, [pw, ph] = pageDims();
+  const o = state.opts, [pw, ph] = pageDims();
   const m = o.margin, gap = o.gap, cols = o.cols;
   const contentW = pw - 2*m, contentH = ph - 2*m;
   const cellW = (contentW - (cols-1)*gap) / cols;
@@ -963,8 +971,8 @@ function computeLayout(){
   if(hh > 0){ page.blocks.push({ type:'header', x:m, y, w:contentW, h:hh }); y += hh + 4; }
 
   const withCap = needCap();
-  for(let i=0; i<S.items.length; i+=N){
-    const rowItems = S.items.slice(i, i+N);
+  for(let i=0; i<state.items.length; i+=N){
+    const rowItems = state.items.slice(i, i+N);
     const placed = rowItems.map((it,j)=>({ it, ...fitImage(it, cellW, maxImgH), idx:i+j }));
 
     const imgH = Math.max(...placed.map(p=>p.h));
@@ -999,11 +1007,11 @@ function computeLayout(){
 let pendingFocus = null;    // {idx} → caret dikembalikan setelah re-render
 
 function render(){
-  const has = S.items.length > 0;
+  const has = state.items.length > 0;
   const mob = isMobile();
   $('#drop').style.display  = has ? 'none' : '';
-  $('#count').textContent   = has ? S.items.length + ' screenshot' : '';
-  $('#countSm').textContent = has ? S.items.length + ' screenshot' : '';
+  $('#count').textContent   = has ? state.items.length + ' screenshot' : '';
+  $('#countSm').textContent = has ? state.items.length + ' screenshot' : '';
   $('#modebar').hidden = !has;
   $('#bPanel').hidden = !mob;
   if(!mob) $('#panel').classList.remove('open');
@@ -1011,7 +1019,7 @@ function render(){
   if(typeof updateAutoUI === 'function') updateAutoUI();
 
   const pagesBox = $('#pages'), cardsBox = $('#cards');
-  const listMode = S.view === 'list';
+  const listMode = state.view === 'list';
   pagesBox.hidden = listMode || !has;
   cardsBox.hidden = !listMode || !has;
   if(!has){ pagesBox.innerHTML = ''; cardsBox.innerHTML = ''; return; }
@@ -1021,13 +1029,15 @@ function render(){
   renderPages(pagesBox);
 }
 
+// Render yang tertunda karena area kerja sedang tersembunyi (lebarnya 0).
+let renderPending = false, hiddenRetry = 0;
 function renderPages(wrap){
   const [pw,ph] = pageDims();
   const stageW  = $('#stage').clientWidth - (isMobile() ? 24 : 44);
   // Lebar 0 terjadi saat tab/panel sedang tersembunyi. Jangan render (nanti halaman
   // ikut menciut jadi nol) — tunggu sampai area kerja punya lebar nyata.
-  if(stageW < 40){ render._needs = true; clearTimeout(render._retry); render._retry = setTimeout(render, 400); return; }
-  render._needs = false;
+  if(stageW < 40){ renderPending = true; clearTimeout(hiddenRetry); hiddenRetry = setTimeout(render, HIDDEN_RETRY_MS); return; }
+  renderPending = false;
   const k = Math.min(1, Math.max(0.1, stageW / (pw*MM)));
   const pages = computeLayout();
   wrap.innerHTML = '';
@@ -1054,8 +1064,8 @@ function renderPages(wrap){
 function headerNode(b){
   const d = el('div','hdr');
   d.style.cssText += ';left:'+b.x+'mm;top:'+b.y+'mm;width:'+b.w+'mm;height:'+b.h+'mm';
-  if(S.meta.title){
-    const t = el('span','t'); t.textContent = S.meta.title;
+  if(state.meta.title){
+    const t = el('span','t'); t.textContent = state.meta.title;
     t.style.fontSize = (14*PT2MM)+'mm'; t.style.lineHeight = '7mm';
     d.appendChild(t);
   }
@@ -1072,7 +1082,7 @@ function shotNode(b){
   const holder = el('div');
   holder.style.display = 'contents';
 
-  const box = el('div','shot' + (S.opts.border ? ' bord' : ''));
+  const box = el('div','shot' + (state.opts.border ? ' bord' : ''));
   box.style.cssText += ';left:'+b.x+'mm;top:'+b.y+'mm;width:'+b.w+'mm;height:'+b.h+'mm';
   box.draggable = true; box.dataset.i = b.idx;
 
@@ -1100,7 +1110,7 @@ function shotNode(b){
       n.style.cssText += ';left:'+b.cellX+'mm;top:'+b.capY+'mm;font-size:'+(CAP_PT*PT2MM)+'mm;line-height:'+CAP_LH+'mm';
       holder.appendChild(n);
     }
-    if(S.opts.cap){
+    if(state.opts.cap){
       const c = el('div','cap');
       c.contentEditable = 'true'; c.spellcheck = false; c.dataset.i = b.idx;
       c.textContent = b.item.caption || '';
@@ -1133,14 +1143,14 @@ function attachDnD(box, idx){
     e.preventDefault(); e.stopPropagation(); box.classList.remove('over');
     const f = +from;
     if(f === idx) return;
-    const [it] = S.items.splice(f,1); S.items.splice(idx,0,it); render();
+    const [it] = state.items.splice(f,1); state.items.splice(idx,0,it); render();
   });
 }
 
 /* ---------- daftar kartu (mode edit, terutama untuk HP) ---------- */
 function renderCards(wrap){
   wrap.innerHTML = '';
-  S.items.forEach((it, i)=>{
+  state.items.forEach((it, i)=>{
     const card = el('div','card');
     card._item = it;                       // dipakai saat menyusun ulang setelah drag
 
@@ -1171,7 +1181,7 @@ function renderCards(wrap){
 
     const act = el('div','cact');
     act.appendChild(mkBtn2('↑ Naikkan',  ()=>move(i,-1), i === 0));
-    act.appendChild(mkBtn2('↓ Turunkan', ()=>move(i, 1), i === S.items.length-1));
+    act.appendChild(mkBtn2('↓ Turunkan', ()=>move(i, 1), i === state.items.length-1));
     act.appendChild(mkBtn2('Sensor', ()=>openRedactor(i)));
     const d = mkBtn2('Hapus', ()=>removeAt(i)); d.style.marginLeft = 'auto';
     act.appendChild(d);
@@ -1219,7 +1229,7 @@ function renderCards(wrap){
   const drop = ()=>{
     if(!dragEl) return;
     dragEl.classList.remove('dragging'); dragEl = null;
-    S.items = [...wrap.children].map(n=>n._item).filter(Boolean);
+    state.items = [...wrap.children].map(n=>n._item).filter(Boolean);
     render();
   };
   wrap.addEventListener('pointerup', drop);
@@ -1236,45 +1246,46 @@ function mkBtn2(label, fn, disabled){
 }
 function move(i, d){
   const j = i+d;
-  if(j < 0 || j >= S.items.length) return;
-  const [it] = S.items.splice(i,1); S.items.splice(j,0,it); render();
+  if(j < 0 || j >= state.items.length) return;
+  const [it] = state.items.splice(i,1); state.items.splice(j,0,it); render();
 }
-function removeAt(i){ S.items.splice(i,1); render(); }
+function removeAt(i){ state.items.splice(i,1); render(); }
 function caretToEnd(node){
   const r = document.createRange(); r.selectNodeContents(node); r.collapse(false);
   const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
 }
 /* Hanya re-layout kalau jumlah baris caption berubah — supaya mengetik tetap mulus. */
+let captionTimer = 0;
 function onCaption(b, node){
   b.item.caption = node.innerText.replace(/\n/g,' ');
-  clearTimeout(onCaption._t);
-  onCaption._t = setTimeout(()=>{
+  clearTimeout(captionTimer);
+  captionTimer = setTimeout(()=>{
     const lines = Math.max(1, wrapText(capText(b.idx, b.item), b.cellW-0.5, CAP_PT).count);
     if(Math.abs(lines*CAP_LH + 0.8 - b.capH) > 0.05){ pendingFocus = b.idx; render(); }
-  }, 220);
+  }, CAPTION_DEBOUNCE_MS);
 }
 
 /* ====================== editor sensor ====================== */
-const RD = { idx:-1, boxes:[], style:'red', drag:null, temp:null, active:-1, baseSrc:null };
+const redactor = { idx:-1, boxes:[], style:'red', drag:null, temp:null, active:-1, baseSrc:null };
 
 function openRedactor(i){
-  const it = S.items[i];
+  const it = state.items[i];
   if(!it) return;
-  RD.idx = i;
-  RD.boxes = (it.red || []).map(b=>({...b}));
+  redactor.idx = i;
+  redactor.boxes = (it.red || []).map(b=>({...b}));
   $('#rd').hidden = false;
   document.body.style.overflow = 'hidden';
   paintRedactor();
 }
 function closeRedactor(save){
-  const it = S.items[RD.idx];
+  const it = state.items[redactor.idx];
   if(save && it){
-    it.red = RD.boxes.slice();
+    it.red = redactor.boxes.slice();
     it._rev = (it._rev || 0) + 1;
-    toast(it.red.length ? 'Screenshot ' + (RD.idx+1) + ': ' + it.red.length + ' bagian disensor'
-                        : 'Screenshot ' + (RD.idx+1) + ': sensor dihapus');
+    toast(it.red.length ? 'Screenshot ' + (redactor.idx+1) + ': ' + it.red.length + ' bagian disensor'
+                        : 'Screenshot ' + (redactor.idx+1) + ': sensor dihapus');
   }
-  RD.idx = -1; RD.boxes = []; RD.drag = null;
+  redactor.idx = -1; redactor.boxes = []; redactor.drag = null;
   $('#rd').hidden = true;
   document.body.style.overflow = '';
   render();
@@ -1288,37 +1299,37 @@ function setBoxStyle(d, b){
   d.style.width  = (b.w*100)+'%'; d.style.height = (b.h*100)+'%';
 }
 function paintRedactor(opts){
-  const it = S.items[RD.idx];
+  const it = state.items[redactor.idx];
   if(!it) return;
   const o = opts || {};
   if(!o.keepImage){
-    const shown = o.exclude != null ? RD.boxes.filter((_,i)=>i !== o.exclude) : RD.boxes;
+    const shown = o.exclude != null ? redactor.boxes.filter((_,i)=>i !== o.exclude) : redactor.boxes;
     $('#rdImg').src = shown.length ? buildPreview(it, shown) : it.dataURL;
   }
   const stage = $('#rdStage');
   [...stage.querySelectorAll('.rdbox,.rdtemp')].forEach(n=>n.remove());
-  RD.boxes.forEach((b,i)=>{
+  redactor.boxes.forEach((b,i)=>{
     const d = el('div','rdbox' + (b.auto ? ' auto' : '') + (i === o.exclude ? ' moving' : ''));
     d.dataset.i = i;
     d.title = b.auto ? 'Dari sensor otomatis. Geser untuk memindahkan' : 'Geser untuk memindahkan';
     setBoxStyle(d, b);
     const x = el('button','x'); x.type='button'; x.textContent='✕'; x.title='Hapus kotak';
-    x.addEventListener('click', e=>{ e.stopPropagation(); RD.boxes.splice(i,1); paintRedactor(); });
+    x.addEventListener('click', e=>{ e.stopPropagation(); redactor.boxes.splice(i,1); paintRedactor(); });
     const rz = el('button','rz'); rz.type='button'; rz.title='Ubah ukuran';
     d.appendChild(x); d.appendChild(rz);
     stage.appendChild(d);
   });
-  const auto = RD.boxes.filter(b=>b.auto).length;
-  const soft = RD.boxes.some(b => b.s === 'blur' || b.s === 'pixel');
-  $('#rdFoot').textContent = RD.boxes.length
-    ? RD.boxes.length + ' kotak sensor' + (auto ? ' (' + auto + ' dari sensor otomatis)' : '')
+  const auto = redactor.boxes.filter(b=>b.auto).length;
+  const soft = redactor.boxes.some(b => b.s === 'blur' || b.s === 'pixel');
+  $('#rdFoot').textContent = redactor.boxes.length
+    ? redactor.boxes.length + ' kotak sensor' + (auto ? ' (' + auto + ' dari sensor otomatis)' : '')
       + '. Geser kotak untuk memindahkan, tarik sudut kanan bawah untuk mengubah ukuran.'
       + (soft ? ' Blur dan piksel masih bisa terbaca samar, pakai blok merah untuk data penting.' : '')
     : 'Tarik di atas gambar untuk menutup bagian yang mau disensor.';
-  $('#rdUndo').disabled = $('#rdClear').disabled = !RD.boxes.length;
+  $('#rdUndo').disabled = $('#rdClear').disabled = !redactor.boxes.length;
 }
 function buildPreview(item, boxes){
-  return redactedCanvas(item, Math.min(DISPLAY_W, item.w), boxes).toDataURL('image/jpeg', 0.9);
+  return redactedCanvas(item, Math.min(DISPLAY_W, item.w), boxes).toDataURL('image/jpeg', PREVIEW_JPEG);
 }
 const clamp = (v,lo,hi) => Math.min(hi, Math.max(lo, v));
 (function bindRedactor(){
@@ -1331,7 +1342,7 @@ const clamp = (v,lo,hi) => Math.min(hi, Math.max(lo, v));
   let mode = null, from = null, base = null, idx = -1, temp = null;
 
   stage.addEventListener('pointerdown', e=>{
-    if(RD.idx < 0 || e.target.closest('.x')) return;   // tombol hapus punya handler sendiri
+    if(redactor.idx < 0 || e.target.closest('.x')) return;   // tombol hapus punya handler sendiri
     const boxEl = e.target.closest('.rdbox');
     const onRz  = !!e.target.closest('.rz');
     e.preventDefault();
@@ -1340,7 +1351,7 @@ const clamp = (v,lo,hi) => Math.min(hi, Math.max(lo, v));
     if(boxEl){
       idx  = +boxEl.dataset.i;
       mode = onRz ? 'resize' : 'move';
-      base = { ...RD.boxes[idx] };
+      base = { ...redactor.boxes[idx] };
       paintRedactor({ exclude: idx });                 // lihat isi di bawah kotak
     }else{
       mode = 'create'; idx = -1;
@@ -1359,7 +1370,7 @@ const clamp = (v,lo,hi) => Math.min(hi, Math.max(lo, v));
       temp.style.height = (Math.abs(p.y-from.y)*100)+'%';
       return;
     }
-    const b = RD.boxes[idx];
+    const b = redactor.boxes[idx];
     if(!b) return;
     if(mode === 'move'){
       b.x = clamp(base.x + (p.x-from.x), 0, 1-base.w);
@@ -1379,11 +1390,11 @@ const clamp = (v,lo,hi) => Math.min(hi, Math.max(lo, v));
       if(temp){ temp.remove(); temp = null; }
       const x = Math.min(from.x,p.x), y = Math.min(from.y,p.y);
       const w = Math.abs(p.x-from.x),  h = Math.abs(p.y-from.y);
-      if(w > 0.012 && h > 0.006) RD.boxes.push({ x, y, w, h, s: RD.style });
-    }else if(RD.boxes[idx]){
+      if(w > 0.012 && h > 0.006) redactor.boxes.push({ x, y, w, h, s: redactor.style });
+    }else if(redactor.boxes[idx]){
       // kotak hasil deteksi yang sudah disesuaikan tangan dianggap milik pengguna,
       // supaya tidak ikut terhapus saat sensor otomatis dimatikan.
-      delete RD.boxes[idx].auto;
+      delete redactor.boxes[idx].auto;
     }
     mode = null; idx = -1; base = null;
     paintRedactor();
@@ -1396,11 +1407,11 @@ const clamp = (v,lo,hi) => Math.min(hi, Math.max(lo, v));
 
   $('#rdStyle').addEventListener('click', e=>{
     const b = e.target.closest('button'); if(!b) return;
-    RD.style = b.dataset.v;
+    redactor.style = b.dataset.v;
     [...e.currentTarget.children].forEach(x=>x.setAttribute('aria-pressed', String(x===b)));
   });
-  $('#rdUndo').addEventListener('click', ()=>{ RD.boxes.pop(); paintRedactor(); });
-  $('#rdClear').addEventListener('click', ()=>{ RD.boxes = []; paintRedactor(); });
+  $('#rdUndo').addEventListener('click', ()=>{ redactor.boxes.pop(); paintRedactor(); });
+  $('#rdClear').addEventListener('click', ()=>{ redactor.boxes = []; paintRedactor(); });
   $('#rdSave').addEventListener('click', ()=>closeRedactor(true));
   $('#rdCancel').addEventListener('click', ()=>closeRedactor(false));
   addEventListener('keydown', e=>{ if(!$('#rd').hidden && e.key === 'Escape') closeRedactor(false); });
@@ -1419,18 +1430,18 @@ async function addFiles(list){
   const files = [...list].filter(f=>f.type.startsWith('image/'));
   if(!files.length) return;
   files.sort((a,b)=>a.name.localeCompare(b.name, undefined, {numeric:true, sensitivity:'base'}));
-  veil(true, 'Memuat ' + files.length + ' screenshot…');
+  showBusy('Memuat ' + files.length + ' screenshot…');
   await yieldUI();
   const failed = [];
   for(const f of files){
     try{
       const dataURL = await readFile(f);
       const img = await loadImg(dataURL);
-      S.items.push({ id:++uid, name:f.name, dataURL, _img:img,
+      state.items.push({ id:++uid, name:f.name, dataURL, _img:img,
                      w:img.naturalWidth, h:img.naturalHeight, caption:'', red:[], _rev:0 });
     }catch(err){ failed.push(f.name); }
   }
-  veil(false); render();
+  hideBusy(); render();
   // Screenshot baru tidak dipindai diam-diam: pengguna yang memutuskan lewat tombol Pindai.
   toast(addedMessage(files.length - failed.length, failed));
 }
@@ -1459,8 +1470,8 @@ const OCR_MIN_W = 1400, OCR_MAX_W = 1800;
 const MONTHS = 'jan|feb|mar|apr|mei|may|jun|jul|agu|agt|aug|sep|okt|oct|nov|des|dec';
 const digits = t => (t.match(/\d/g) || []).join('');
 // Huruf yang sering tertukar oleh OCR disamakan, dipakai saat mencocokkan label.
-const conf = t => t.replace(/[l1|!]/g,'i').replace(/0/g,'o').replace(/5/g,'s');
-const toks = t => String(t).toLowerCase().replace(/[’'`]/g,' ').replace(/[^a-z0-9]+/g,' ').trim()
+const foldLookalikes = t => t.replace(/[l1|!]/g,'i').replace(/0/g,'o').replace(/5/g,'s');
+const wordTokens = t => String(t).toLowerCase().replace(/[’'`]/g,' ').replace(/[^a-z0-9]+/g,' ').trim()
   .split(' ').filter(Boolean);
 
 /* ---------- label ----------
@@ -1527,7 +1538,7 @@ const numberWith = minDigits => ws => {
 // Butir daftar ("1. Sesuai data di Kartu Keluarga") atau frasa yang isinya kebanyakan
 // kata pelengkap label bukanlah nama.
 function looksLikeName(ws){
-  const t = textOf(ws), tk = toks(t), filler = tk.filter(x => LABEL_TAIL.has(x) || FILLER.has(x)).length;
+  const t = textOf(ws), tk = wordTokens(t), filler = tk.filter(x => LABEL_TAIL.has(x) || FILLER.has(x)).length;
   return /[a-z]{2}/i.test(t) && !/\d{3,}/.test(t) && ws.length <= 5 && !/:\s*$/.test(t) &&
          !INSTRUCTION.test(t) && !/^\d+[.)]/.test(t) && filler*2 < tk.length;
 }
@@ -1612,19 +1623,19 @@ const LABELS = [
     { cats:[c.id], end:c.labelAtEnd, loose:true, v:c.loose || [] }
   ])
 ].flatMap(L => L.v.map(v => ({ cats:L.cats, split:!!L.split, end:!!L.end, loose:!!L.loose,
-                               words:v.split(' ').map(conf) })))
+                               words:v.split(' ').map(foldLookalikes) })))
  .sort((a,b) => b.words.length - a.words.length);
 const valueOk = (cat, ws) => !CATEGORY[cat] || !CATEGORY[cat].valid || CATEGORY[cat].valid(ws);
 
 /* ---------- geometri ---------- */
-const bh = b => b.y1 - b.y0;
-const cyOf = b => (b.y0 + b.y1)/2;
+const boxH = b => b.y1 - b.y0;
+const centerY = b => (b.y0 + b.y1)/2;
 // Perkiraan ukuran huruf dari tinggi kotak kata: kotak "Maria" (tanpa huruf
 // menjulur ke bawah) lebih pendek dari "Kartu Keluarga" walau hurufnya sama besar.
 function fontSize(ws){
   return Math.max(...ws.map(w => {
     const asc = /[A-Z0-9bdfhklt!?/()&'"]/.test(w.t), desc = /[gjpqy,;()]/.test(w.t);
-    return bh(w.b) / (asc ? (desc ? .95 : .73) : (desc ? .76 : .53));
+    return boxH(w.b) / (asc ? (desc ? .95 : .73) : (desc ? .76 : .53));
   }));
 }
 function unionBox(list){
@@ -1664,8 +1675,8 @@ function findLabels(lines){
     const tk = [];
     ws.forEach((w, wi)=>{
       if(valueish(w.t)) { tk.push({ t:'', wi, first:true, last:true }); return; }
-      const parts = toks(w.t);
-      parts.forEach((t, k) => tk.push({ t:conf(t), wi, first:k === 0, last:k === parts.length-1 }));
+      const parts = wordTokens(w.t);
+      parts.forEach((t, k) => tk.push({ t:foldLookalikes(t), wi, first:k === 0, last:k === parts.length-1 }));
     });
     let p = 0;
     while(p < tk.length){
@@ -1678,7 +1689,7 @@ function findLabels(lines){
       }
       if(!hit){ p++; continue; }
       const first = tk[p].wi, last = tk[p + hit.words.length - 1].wi;
-      const h = Math.max(...ws.slice(first, last+1).map(w=>bh(w.b)), 1);
+      const h = Math.max(...ws.slice(first, last+1).map(w=>boxH(w.b)), 1);
       const prev = ws[first-1];
       // awal: awal baris, jarak kolom, hanya ikon di depannya — atau, untuk label
       // "end", baris pendek tanpa angka yang diakhiri label ini
@@ -1689,7 +1700,7 @@ function findLabels(lines){
       // titik dua / jarak kolom / akhir baris
       let nw = last + 1, colon = /:\s*$/.test(ws[last].t), paren = false;
       while(nw < ws.length){
-        const t = ws[nw].t, parts = toks(t);
+        const t = ws[nw].t, parts = wordTokens(t);
         if(/^\(/.test(t)) paren = true;
         // "/" di "NIK / No. KTP" dan simbol lain tanpa huruf/angka ikut dilewati
         if(paren || !parts.length || parts.every(x=>LABEL_TAIL.has(x))){
@@ -1728,12 +1739,12 @@ function labelCandidates(lab, lines, labelWords, W){
   // label lain di baris visual yang sama membatasi kolom nilai ini
   const all = lines.flat();
   const rightLab = all.filter(w => isLab(w) && w.b.x0 > box.x1 &&
-    Math.abs(cyOf(w.b) - cyOf(box)) < h*.8).map(w=>w.b.x0);
+    Math.abs(centerY(w.b) - centerY(box)) < h*.8).map(w=>w.b.x0);
   const colRight = rightLab.length ? Math.min(...rightLab) - h*.5 : Infinity;
   // 2) baris visual yang sama tapi dipecah OCR (dua kolom) — harus berjarak kolom,
   //    bukan kata berikutnya dalam paragraf yang kebetulan dipisah OCR
   const row = all.filter(w => !isLab(w) && w.li !== lab.li && w.b.x0 > box.x1 && w.b.x0 < colRight &&
-    Math.abs(cyOf(w.b) - cyOf(box)) < Math.max(h, bh(w.b))*.6).sort((a,b)=>a.b.x0-b.b.x0);
+    Math.abs(centerY(w.b) - centerY(box)) < Math.max(h, boxH(w.b))*.6).sort((a,b)=>a.b.x0-b.b.x0);
   // label generik satu kata ("Nama") butuh jarak lebih lebar: spasi paragraf rata
   // kanan-kiri di dokumen bisa mencapai ~2× tinggi huruf
   const minGap = (lab.L.loose ? 3 : 1.6) * h;
@@ -1749,8 +1760,8 @@ function labelCandidates(lab, lines, labelWords, W){
   const used = new Set();
   for(const top of below){
     if(used.has(top) || out.length >= 4) continue;
-    const rh = bh(top.b);
-    const rowWords = all.filter(w => !isLab(w) && Math.abs(cyOf(w.b) - cyOf(top.b)) < rh*.6 &&
+    const rh = boxH(top.b);
+    const rowWords = all.filter(w => !isLab(w) && Math.abs(centerY(w.b) - centerY(top.b)) < rh*.6 &&
       w.b.x0 >= box.x0 - 1.5*h && w.b.x0 < colRight).sort((a,b)=>a.b.x0-b.b.x0);
     const r = [];
     for(const w of rowWords){
@@ -1811,6 +1822,8 @@ function findPhotos(item){
     }
     return out;
   };
+  // penutupan morfologis: menyambung celah kecil di dalam wilayah foto
+  const closeGaps = src => morph(morph(src, true), false);
   const components = (mask, seed) => {
     const seen = new Uint8Array(N), out = [];
     for(let i=0; i<N; i++){
@@ -1833,14 +1846,14 @@ function findPhotos(item){
     for(let y=r.y0; y<=r.y1; y++) for(let x=r.x0; x<=r.x1; x++){ s += arr[y*gw+x]; t++; } return s/t; };
   const cands = [];
   // A) foto tajam: dari sel sibuk
-  for(const r of components(morph(morph(busy, true), false), busy)){
+  for(const r of components(closeGaps(busy), busy)){
     const bw = r.x1-r.x0+1, bhh = r.y1-r.y0+1;
     if(r.n < 24 || bw < gw*.12 || bhh < gh*.04 || bw*bhh < N*.012) continue;
     if(r.n/(bw*bhh) < .45 || r.raw/r.n < .35) continue;
     cands.push({ ...r, blurred:false, texture: frac(busy, r) >= .2 && frac(tonal, r) >= .2 });
   }
   // B) foto buram: dari sel tonal yang padat
-  for(const r of components(morph(morph(tonal, true), false), tonal)){
+  for(const r of components(closeGaps(tonal), tonal)){
     const bw = r.x1-r.x0+1, bhh = r.y1-r.y0+1;
     if(bw < gw*.2 || bhh < gh*.08 || bw*bhh < N*.03) continue;
     if(r.n/(bw*bhh) >= .6 && frac(tonal, r) >= .45 && frac(busy, r) < .08) cands.push({ ...r, blurred:true, texture:true });
@@ -1897,14 +1910,14 @@ function classifyPhoto(p, words, W, H, solo){
   const inside = new Set(), near = [], title = [];
   for(const w of words){
     const cx = (w.b.x0+w.b.x1)/2/W, cy = (w.b.y0+w.b.y1)/2/H;
-    if(cy < .1) title.push(...toks(w.t));
+    if(cy < .1) title.push(...wordTokens(w.t));
     const inX = cx >= p.x && cx <= p.x+p.w, inY = cy >= p.y && cy <= p.y+p.h;
-    if(inX && inY){ toks(w.t).forEach(t=>{ if(KTP_WORDS.has(conf(t))) inside.add(conf(t)); }); continue; }
+    if(inX && inY){ wordTokens(w.t).forEach(t=>{ if(KTP_WORDS.has(foldLookalikes(t))) inside.add(foldLookalikes(t)); }); continue; }
     const overlapX = cx >= p.x - .05 && cx <= p.x + p.w + .05;
     const above = overlapX && cy < p.y && p.y - cy < .07, under = overlapX && cy > p.y+p.h && cy - p.y - p.h < .035;
     const side = cy >= p.y - .035 && cy <= p.y + p.h + .01 &&
                  ((cx > p.x+p.w && cx - p.x - p.w < .5) || (cx < p.x && p.x - cx < .35));
-    if((above || under || side) && cy >= .1) near.push(...toks(w.t));
+    if((above || under || side) && cy >= .1) near.push(...wordTokens(w.t));
   }
   const nearTxt = ' ' + near.join(' ') + ' ', titleTxt = ' ' + title.join(' ') + ' ';
   const hint = re => re.test(nearTxt) || (solo && re.test(titleTxt));
@@ -1958,8 +1971,8 @@ function detect(item, cats){
   const clean = ws => {
     const k = ws.filter(w => /[a-z0-9]/i.test(w.t));
     if(k.length < 2) return k;
-    const med = k.map(w=>bh(w.b)).sort((a,b)=>a-b)[k.length>>1];
-    return k.filter(w => bh(w.b) <= med*1.8);
+    const med = k.map(w=>boxH(w.b)).sort((a,b)=>a-b)[k.length>>1];
+    return k.filter(w => boxH(w.b) <= med*1.8);
   };
   // teks bantu seperti "16 Char maks" bukan bagian dari nilai
   const helper = ws => ws.filter((w,i) => !/^(char|chars|karakter|maks|max)$/i.test(w.t) &&
@@ -2004,7 +2017,7 @@ function detect(item, cats){
     if(b.cat !== 'phone') continue;
     const x0 = b.x*W, y0 = b.y*H, y1 = (b.y+b.h)*H, hh = y1 - y0;
     const cc = words.find(w => /^[+4]?62$/.test(w.t) && w.b.x1 <= x0 + 2 && x0 - w.b.x1 < hh*4 &&
-      Math.abs(cyOf(w.b) - (y0+y1)/2) < hh*.6);
+      Math.abs(centerY(w.b) - (y0+y1)/2) < hh*.6);
     if(cc){ const x = clamp(cc.b.x0/W - .006, 0, 1); b.w += b.x - x; b.x = x; }
   }
   return found;
@@ -2124,17 +2137,17 @@ function ocrCanvas(item){
 }
 // Memindai screenshot yang belum pernah dipindai, lalu menerapkan pilihan sensor.
 async function scanAll(){
-  if(_scanning || !S.items.length) return;
-  const todo = S.items.filter(it => !it._ocr);
+  if(_scanning || !state.items.length) return;
+  const todo = state.items.filter(it => !it._ocr);
   if(!todo.length){ showAutoResult(applyAuto()); return; }
   _scanning = true; _cancel = false;
   $('#veilCancel').hidden = false;
   try{
-    veil(true, 'Menyiapkan pemindai…'); await yieldUI();
+    showBusy('Menyiapkan pemindai…'); await yieldUI();
     const wk = await getWorker();
     for(let i=0; i<todo.length; i++){
       if(_cancel) break;
-      veil(true, 'Memindai ' + (i+1) + ' dari ' + todo.length + ' screenshot…'); await yieldUI();
+      showBusy('Memindai ' + (i+1) + ' dari ' + todo.length + ' screenshot…'); await yieldUI();
       const it = todo[i], c = ocrCanvas(it);
       const { data } = await wk.recognize(c);
       it._ocr = { w:c.width, h:c.height,
@@ -2148,7 +2161,7 @@ async function scanAll(){
     console.error(err);
     toast('Pemindai gagal dimuat. Coba muat ulang halaman.');
   }finally{
-    _scanning = false; $('#veilCancel').hidden = true; veil(false);
+    _scanning = false; $('#veilCancel').hidden = true; hideBusy();
   }
   showAutoResult(applyAuto());
 }
@@ -2176,9 +2189,9 @@ function computeAutoBoxes(items, cats){
 /* Menerapkan sensor otomatis ke state (command): kotak manual selalu dipertahankan,
    kotak otomatis diganti dengan hasil terbaru. Mengembalikan ringkasan untuk ditampilkan. */
 function applyAuto(){
-  const auto = S.auto.on ? computeAutoBoxes(S.items, S.auto.applied || S.auto.cats) : new Map();
+  const auto = state.auto.on ? computeAutoBoxes(state.items, state.auto.applied || state.auto.cats) : new Map();
   let total = 0, imgs = 0;
-  S.items.forEach(it=>{
+  state.items.forEach(it=>{
     const manual = (it.red || []).filter(b=>!b.auto);
     const found = (auto.get(it) || []).filter(b => !manual.some(m => overlapRatio(b,m) > 0.6));
     if(found.length){ imgs++; total += found.length; }
@@ -2197,18 +2210,18 @@ const encCache = new Map();
 function encodeItem(item, targetWmm){
   // Kualitas "asli" tetap harus lewat canvas bila ada sensor — kalau tidak, gambar
   // mentah yang belum tersensor yang masuk ke file hasil.
-  if(S.opts.dpi === 'orig' && !hasRed(item)){
+  if(state.opts.dpi === 'orig' && !hasRed(item)){
     return { data:item.dataURL, fmt: /^data:image\/png/i.test(item.dataURL) ? 'PNG' : 'JPEG' };
   }
-  const orig = S.opts.dpi === 'orig';
+  const orig = state.opts.dpi === 'orig';
   const targetPx = orig ? item.w
-    : Math.max(1, Math.min(item.w, Math.round(targetWmm/25.4 * (+S.opts.dpi))));
-  const key = item.id + ':' + item._rev + ':' + S.opts.dpi + ':' + targetPx;
+    : Math.max(1, Math.min(item.w, Math.round(targetWmm/MM_PER_INCH * (+state.opts.dpi))));
+  const key = item.id + ':' + item._rev + ':' + state.opts.dpi + ':' + targetPx;
   if(encCache.has(key)) return encCache.get(key);
 
   const c = redactedCanvas(item, targetPx);
   const out = orig ? { data:c.toDataURL('image/png'), fmt:'PNG' }
-                   : { data:c.toDataURL('image/jpeg', 0.92), fmt:'JPEG' };
+                   : { data:c.toDataURL('image/jpeg', EXPORT_JPEG), fmt:'JPEG' };
   encCache.set(key, out);
   return out;
 }
@@ -2219,30 +2232,30 @@ function dataURLtoBytes(d){
   return u;
 }
 function fileBase(){
-  const t = (S.meta.title || 'QA-Documentation').replace(/[\\/:*?"<>|]+/g,'-').trim();
-  const d = S.meta.date || new Date().toISOString().slice(0,10);
+  const t = (state.meta.title || 'QA-Documentation').replace(/[\\/:*?"<>|]+/g,'-').trim();
+  const d = state.meta.date || new Date().toISOString().slice(0,10);
   return t + '_' + d;
 }
 
 /* ====================== export PDF ====================== */
 async function exportPDF(){
-  if(!S.items.length) return;
+  if(!state.items.length) return;
   if(!window.jspdf){ toast('PDF tidak bisa dibuat. Coba muat ulang halaman.'); return; }
-  veil(true, 'Membuat PDF…'); await yieldUI();
+  showBusy('Membuat PDF…'); await yieldUI();
   try{
     const { jsPDF } = window.jspdf;
     const [pw,ph] = pageDims();
-    const doc = new jsPDF({ unit:'mm', format:[pw,ph], orientation:S.opts.orient, compress:true });
+    const doc = new jsPDF({ unit:'mm', format:[pw,ph], orientation:state.opts.orient, compress:true });
     const pages = computeLayout();
 
     for(let i=0;i<pages.length;i++){
-      if(i) doc.addPage([pw,ph], S.opts.orient);
+      if(i) doc.addPage([pw,ph], state.opts.orient);
       for(const b of pages[i].blocks){
         if(b.type === 'header'){
           let ty = b.y;
-          if(S.meta.title){
+          if(state.meta.title){
             doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(20,23,28);
-            doc.text(pdfSafe(S.meta.title), b.x, ty + 5); ty += 7;
+            doc.text(pdfSafe(state.meta.title), b.x, ty + 5); ty += 7;
           }
           doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(91,98,109);
           metaLines().forEach(line=>{ doc.text(pdfSafe(line), b.x, ty + 3); ty += 4.2; });
@@ -2251,7 +2264,7 @@ async function exportPDF(){
         }else{
           const { data, fmt } = encodeItem(b.item, b.w);
           doc.addImage(data, fmt, b.x, b.y, b.w, b.h, undefined, 'FAST');
-          if(S.opts.border){
+          if(state.opts.border){
             doc.setDrawColor(212,216,222); doc.setLineWidth(0.25);
             doc.rect(b.x, b.y, b.w, b.h);
           }
@@ -2269,29 +2282,29 @@ async function exportPDF(){
     toast('PDF sudah diunduh');
   }catch(err){
     console.error(err); toast('PDF gagal dibuat. Coba lagi.');
-  }finally{ veil(false); }
+  }finally{ hideBusy(); }
 }
 
 /* ====================== export DOCX ====================== */
 async function exportDOCX(){
-  if(!S.items.length) return;
+  if(!state.items.length) return;
   if(!window.docx){ toast('DOCX tidak bisa dibuat. Coba muat ulang halaman.'); return; }
-  veil(true, 'Membuat DOCX…'); await yieldUI();
+  showBusy('Membuat DOCX…'); await yieldUI();
   try{
     const D = window.docx;
-    const o = S.opts;
+    const o = state.opts;
     const { pw, ph, m, gap, cols:N, contentW, cellW, maxImgH } = gridGeometry();
-    const mm2px = mm => Math.round(mm/25.4*96);
+    const mm2px = mm => Math.round(mm*MM);
     const NONE  = { style: D.BorderStyle.NONE, size:0, color:'FFFFFF' };
     const THIN  = { style: D.BorderStyle.SINGLE, size:4, color:'D4D8DE' };
     const noB   = { top:NONE, bottom:NONE, left:NONE, right:NONE };
     const boxB  = { top:THIN, bottom:THIN, left:THIN, right:THIN };
 
     const children = [];
-    if(o.header && (S.meta.title || metaLines().length)){
-      if(S.meta.title){
+    if(o.header && (state.meta.title || metaLines().length)){
+      if(state.meta.title){
         children.push(new D.Paragraph({ spacing:{after:60},
-          children:[ new D.TextRun({ text:S.meta.title, bold:true, size:28, font:'Helvetica' }) ] }));
+          children:[ new D.TextRun({ text:state.meta.title, bold:true, size:28, font:'Helvetica' }) ] }));
       }
       metaLines().forEach(line=>{
         children.push(new D.Paragraph({ spacing:{after:20},
@@ -2302,10 +2315,10 @@ async function exportDOCX(){
     }
 
     const rows = [];
-    for(let i=0;i<S.items.length;i+=N){
+    for(let i=0;i<state.items.length;i+=N){
       const cells = [];
       for(let j=0;j<N;j++){
-        const it = S.items[i+j];
+        const it = state.items[i+j];
         const kids = [];
         if(it){
           const { w, h } = fitImage(it, cellW, maxImgH);
@@ -2341,7 +2354,7 @@ async function exportDOCX(){
 
     const doc = new D.Document({
       creator:'QA Shot Doc',
-      title:S.meta.title || 'QA Documentation',
+      title:state.meta.title || 'QA Documentation',
       sections:[{
         properties:{ page:{
           size:{ width:Math.round(pw*TWIP), height:Math.round(ph*TWIP),
@@ -2360,44 +2373,44 @@ async function exportDOCX(){
     toast('DOCX sudah diunduh');
   }catch(err){
     console.error(err); toast('DOCX gagal dibuat. Coba lagi.');
-  }finally{ veil(false); }
+  }finally{ hideBusy(); }
 }
 
 /* ====================== binding UI ====================== */
 function bindRange(id, key, unit){
   const r = $('#'+id), v = $('#v'+id[0].toUpperCase()+id.slice(1));
-  const show = ()=>{ if(v) v.textContent = S.opts[key] + (unit||''); };
-  r.value = S.opts[key]; show();
-  r.addEventListener('input', ()=>{ S.opts[key] = +r.value; show(); render(); });
+  const show = ()=>{ if(v) v.textContent = state.opts[key] + (unit||''); };
+  r.value = state.opts[key]; show();
+  r.addEventListener('input', ()=>{ state.opts[key] = +r.value; show(); render(); });
 }
 bindRange('cols','cols','');
 bindRange('gap','gap',' mm');
 bindRange('margin','margin',' mm');
 
-$('#size').addEventListener('change', e=>{ S.opts.size = e.target.value; render(); });
+$('#size').addEventListener('change', e=>{ state.opts.size = e.target.value; render(); });
 $('#orient').addEventListener('click', e=>{
   const b = e.target.closest('button'); if(!b) return;
-  S.opts.orient = b.dataset.v;
+  state.opts.orient = b.dataset.v;
   [...$('#orient').children].forEach(x=>x.setAttribute('aria-pressed', String(x === b)));
   render();
 });
 $('#viewSeg').addEventListener('click', e=>{
   const b = e.target.closest('button'); if(!b) return;
-  S.view = b.dataset.v; S.viewLocked = true;   // pilihan manual menang atas ukuran layar
+  state.view = b.dataset.v; state.viewLocked = true;   // pilihan manual menang atas ukuran layar
   [...$('#viewSeg').children].forEach(x=>x.setAttribute('aria-pressed', String(x === b)));
   render();
 });
 [['oHeader','header'],['oNum','num'],['oCap','cap'],['oBorder','border']].forEach(([id,key])=>{
   $('#'+id).addEventListener('change', e=>{
-    S.opts[key] = e.target.checked;
+    state.opts[key] = e.target.checked;
     if(key === 'header') $('#metaBox').style.display = e.target.checked ? '' : 'none';
     render();
   });
 });
 [['mTitle','title'],['mTester','tester'],['mDate','date'],['mDevice','device'],['mBuild','build']].forEach(([id,key])=>{
-  $('#'+id).addEventListener('input', e=>{ S.meta[key] = e.target.value; render(); });
+  $('#'+id).addEventListener('input', e=>{ state.meta[key] = e.target.value; render(); });
 });
-$('#dpi').addEventListener('change', e=>{ S.opts.dpi = e.target.value; });
+$('#dpi').addEventListener('change', e=>{ state.opts.dpi = e.target.value; });
 
 /* ---------- sensor otomatis ----------
    Alurnya: pengguna mencentang data yang mau disensor, lalu klik Pindai. Mengubah
@@ -2410,12 +2423,12 @@ const autoSupported = location.protocol !== 'file:';
 $('#autoHint').textContent = autoSupported
   ? 'Pemindaian pertama mengunduh sekitar 6 MB. Hasilnya bisa meleset, jadi cek lagi sebelum diunduh.'
   : 'Sensor otomatis hanya bisa dipakai kalau halaman ini dibuka dari internet, bukan dari file di komputer. Sensor manual tetap bisa.';
-const catsNow = () => ({ ...S.auto.cats });
+const catsNow = () => ({ ...state.auto.cats });
 const sameCats = (a, b) => !!a && !!b && Object.keys(a).every(k => !!a[k] === !!b[k]);
 function updateAutoUI(){
   const btn = $('#bAutoRun'), st = $('#autoStatus');
-  const n = S.items.length, scanned = S.items.filter(it => it._ocr).length, fresh = n - scanned;
-  const picked = Object.values(S.auto.cats).some(Boolean);
+  const n = state.items.length, scanned = state.items.filter(it => it._ocr).length, fresh = n - scanned;
+  const picked = Object.values(state.auto.cats).some(Boolean);
   let label = 'Pindai screenshot', off = false, msg = '';
   if(!autoSupported){ off = true; }
   else if(!n){ off = true; msg = 'Tambahkan screenshot dulu.'; }
@@ -2423,20 +2436,20 @@ function updateAutoUI(){
   else if(fresh){
     label = fresh === n ? 'Pindai screenshot' : 'Pindai ' + fresh + ' screenshot baru';
     if(scanned) msg = fresh + ' screenshot baru belum dipindai.';
-  }else if(S.auto.on && sameCats(S.auto.cats, S.auto.applied)){
+  }else if(state.auto.on && sameCats(state.auto.cats, state.auto.applied)){
     label = 'Sudah diterapkan'; off = true; msg = 'Semua screenshot sudah dipindai.';
   }else{
-    label = 'Terapkan'; msg = S.auto.on ? 'Pilihan berubah. Klik Terapkan.' : 'Semua screenshot sudah dipindai.';
+    label = 'Terapkan'; msg = state.auto.on ? 'Pilihan berubah. Klik Terapkan.' : 'Semua screenshot sudah dipindai.';
   }
   btn.textContent = label; btn.disabled = off; st.textContent = msg;
-  $('#bAutoClear').hidden = !S.auto.on;
+  $('#bAutoClear').hidden = !state.auto.on;
 }
 $('#bAutoRun').addEventListener('click', ()=>{
-  S.auto.applied = catsNow(); S.auto.on = true;
-  if(S.items.some(it => !it._ocr)) scanAll(); else showAutoResult(applyAuto());
+  state.auto.applied = catsNow(); state.auto.on = true;
+  if(state.items.some(it => !it._ocr)) scanAll(); else showAutoResult(applyAuto());
 });
 $('#bAutoClear').addEventListener('click', ()=>{
-  S.auto.on = false; S.auto.applied = null; applyAuto();
+  state.auto.on = false; state.auto.applied = null; applyAuto();
   toast('Hasil sensor otomatis dihapus. Sensor manual tetap ada.');
 });
 for(const cat of CATEGORIES){
@@ -2446,12 +2459,12 @@ for(const cat of CATEGORIES){
   document.querySelector('.cats[data-group="' + cat.group + '"]').append(lab);
 }
 [...document.querySelectorAll('.cats input')].forEach(c=>{
-  S.auto.cats[c.dataset.cat] = c.checked;
-  c.addEventListener('change', ()=>{ S.auto.cats[c.dataset.cat] = c.checked; updateAutoUI(); });
+  state.auto.cats[c.dataset.cat] = c.checked;
+  c.addEventListener('change', ()=>{ state.auto.cats[c.dataset.cat] = c.checked; updateAutoUI(); });
 });
 document.querySelectorAll('.linkbtn[data-all]').forEach(b=>b.addEventListener('click', ()=>{
   const on = b.dataset.all === '1';
-  document.querySelectorAll('.cats input').forEach(c=>{ c.checked = on; S.auto.cats[c.dataset.cat] = on; });
+  document.querySelectorAll('.cats input').forEach(c=>{ c.checked = on; state.auto.cats[c.dataset.cat] = on; });
   updateAutoUI();
 }));
 $('#veilCancel').addEventListener('click', ()=>{ _cancel = true; toast('Pemindaian dibatalkan'); });
@@ -2460,8 +2473,8 @@ $('#bAdd').addEventListener('click', ()=>$('#file').click());
 $('#bPick').addEventListener('click', ()=>$('#file').click());
 $('#file').addEventListener('change', e=>{ addFiles(e.target.files); e.target.value = ''; });
 $('#bClear').addEventListener('click', ()=>{
-  if(!S.items.length) return;
-  if(confirm('Hapus semua screenshot? Keterangan dan sensornya ikut terhapus.')){ S.items = []; encCache.clear(); render(); }
+  if(!state.items.length) return;
+  if(confirm('Hapus semua screenshot? Keterangan dan sensornya ikut terhapus.')){ state.items = []; encCache.clear(); render(); }
 });
 $('#bPanel').addEventListener('click', ()=>$('#panel').classList.toggle('open'));
 $('#bPdf').addEventListener('click', exportPDF);
@@ -2486,34 +2499,35 @@ document.addEventListener('paste', e=>{
   const f = e.clipboardData && e.clipboardData.files;
   if(f && f.length){ e.preventDefault(); addFiles(f); }
 });
+let resizeTimer = 0;
 addEventListener('resize', ()=>{
-  clearTimeout(render._t);
-  render._t = setTimeout(()=>{ if(!S.viewLocked) syncView(); render(); }, 120);
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(()=>{ if(!state.viewLocked) syncView(); render(); }, RESIZE_DEBOUNCE_MS);
 });
 // Panel bisa tersembunyi (lebar 0) saat render dipanggil; begitu ia punya lebar lagi,
 // gambar ulang segera supaya halaman tidak terlihat kosong.
 if(window.ResizeObserver){
-  new ResizeObserver(()=>{ if(render._needs && stage.clientWidth > 40) render(); }).observe(stage);
+  new ResizeObserver(()=>{ if(renderPending && stage.clientWidth > 40) render(); }).observe(stage);
 }
-document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && render._needs) render(); });
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && renderPending) render(); });
 // Di HP mode daftar jauh lebih enak dipakai; di layar lebar pratinjau kertas.
 function syncView(){
-  if(S.viewLocked) return;
-  S.view = isMobile() ? 'list' : 'page';
-  [...$('#viewSeg').children].forEach(x=>x.setAttribute('aria-pressed', String(x.dataset.v === S.view)));
+  if(state.viewLocked) return;
+  state.view = isMobile() ? 'list' : 'page';
+  [...$('#viewSeg').children].forEach(x=>x.setAttribute('aria-pressed', String(x.dataset.v === state.view)));
 }
 mq.addEventListener ? mq.addEventListener('change', ()=>{ syncView(); render(); })
                     : mq.addListener(()=>{ syncView(); render(); });
 
 $('#mDate').value = new Date().toISOString().slice(0,10);
-S.meta.date = $('#mDate').value;
+state.meta.date = $('#mDate').value;
 syncView();
 render();
 
 // Akses internal untuk halaman tes (tests/run.html). Hanya aktif bila halaman dibuka
 // dengan parameter ?test, jadi tidak terpakai pada penggunaan biasa.
 if(new URLSearchParams(location.search).has('test')){
-  window.__qaShotDoc = { S, detect, findLabels, labelCandidates, valueOk, nikLike, dobLike, wordEq,
+  window.__qaShotDoc = { state, detect, findLabels, labelCandidates, valueOk, nikLike, dobLike, wordEq,
     computeAutoBoxes, applyAuto, addedMessage, updateAutoUI, PATTERNS, computeLayout, fitImage, redactedCanvas };
 }
 })();
