@@ -1434,17 +1434,28 @@ async function addFiles(list){
   files.sort((a,b)=>a.name.localeCompare(b.name, undefined, {numeric:true, sensitivity:'base'}));
   veil(true, 'Memuat ' + files.length + ' screenshot…');
   await yieldUI();
+  const failed = [];
   for(const f of files){
     try{
       const dataURL = await readFile(f);
       const img = await loadImg(dataURL);
       S.items.push({ id:++uid, name:f.name, dataURL, _img:img,
                      w:img.naturalWidth, h:img.naturalHeight, caption:'', red:[], _rev:0 });
-    }catch(err){ console.warn('Gagal memuat', f.name, err); }
+    }catch(err){ failed.push(f.name); }
   }
   veil(false); render();
   // Screenshot baru tidak dipindai diam-diam: pengguna yang memutuskan lewat tombol Pindai.
-  toast(files.length + ' screenshot ditambahkan');
+  toast(addedMessage(files.length - failed.length, failed));
+}
+// Contoh: "4 screenshot ditambahkan. 1 tidak bisa dibuka: foto.heic"
+function addedMessage(added, failed){
+  const parts = [];
+  if(added) parts.push(added + ' screenshot ditambahkan.');
+  if(failed.length){
+    const names = failed.slice(0, 2).join(', ') + (failed.length > 2 ? ', …' : '');
+    parts.push(failed.length + ' tidak bisa dibuka: ' + names);
+  }
+  return parts.join(' ');
 }
 
 /* ====================== sensor otomatis (OCR + foto) ======================
@@ -2104,10 +2115,11 @@ function ocrCanvas(item){
   ctx.putImageData(im, 0, 0);
   return c;
 }
-async function scanAll(force){
+// Memindai screenshot yang belum pernah dipindai, lalu menerapkan pilihan sensor.
+async function scanAll(){
   if(_scanning || !S.items.length) return;
-  const todo = S.items.filter(it => force || !it._ocr);
-  if(!todo.length){ applyAuto(true); return; }
+  const todo = S.items.filter(it => !it._ocr);
+  if(!todo.length){ showAutoResult(applyAuto()); return; }
   _scanning = true; _cancel = false;
   $('#veilCancel').hidden = false;
   try{
@@ -2131,44 +2143,46 @@ async function scanAll(force){
   }finally{
     _scanning = false; $('#veilCancel').hidden = true; veil(false);
   }
-  applyAuto(true);
+  showAutoResult(applyAuto());
 }
-/* Menyusun ulang kotak: yang manual selalu dipertahankan, yang otomatis diturunkan
-   ulang dari hasil analisis yang sudah tersimpan. Dua tahap: deteksi per gambar,
-   lalu nilai yang ditemukan dicari ulang di semua gambar. */
-function applyAuto(report){
-  let total = 0, imgs = 0;
+/* Kotak sensor otomatis untuk semua screenshot, tanpa mengubah apa pun (query).
+   Dua tahap: deteksi per screenshot, lalu nilai yang ditemukan dicari ulang di semua
+   screenshot. Hasil: Map screenshot -> daftar kotak. */
+function computeAutoBoxes(items, cats){
   const per = new Map(), seen = new Set(), values = [];
-  if(S.auto.on){
-    for(const it of S.items){
-      if(!it._ocr) continue;
-      const f = detect(it, S.auto.applied || S.auto.cats);
-      per.set(it, f);
-      for(const b of f){
-        if(!b.val || !PROPAGATE.includes(b.cat)) continue;
-        const v = normVal(b.val);
-        if(v.replace(/[^a-z0-9]/g,'').length >= 4 && !seen.has(v)){
-          seen.add(v); values.push({ words:v.split(' '), cat:b.cat, whole:PROPAGATE_WHOLE.includes(b.cat) });
-        }
+  for(const it of items){
+    if(!it._ocr) continue;
+    const found = detect(it, cats);
+    per.set(it, found);
+    for(const b of found){
+      if(!b.val || !PROPAGATE.includes(b.cat)) continue;
+      const v = normVal(b.val);
+      if(v.replace(/[^a-z0-9]/g,'').length >= 4 && !seen.has(v)){
+        seen.add(v); values.push({ words:v.split(' '), cat:b.cat, whole:PROPAGATE_WHOLE.includes(b.cat) });
       }
     }
   }
+  const result = new Map();
+  for(const [it, found] of per) result.set(it, dedupe(found.concat(propagate(it, values))));
+  return result;
+}
+/* Menerapkan sensor otomatis ke state (command): kotak manual selalu dipertahankan,
+   kotak otomatis diganti dengan hasil terbaru. Mengembalikan ringkasan untuk ditampilkan. */
+function applyAuto(){
+  const auto = S.auto.on ? computeAutoBoxes(S.items, S.auto.applied || S.auto.cats) : new Map();
+  let total = 0, imgs = 0;
   S.items.forEach(it=>{
     const manual = (it.red || []).filter(b=>!b.auto);
-    let next = manual;
-    if(S.auto.on && it._ocr){
-      const found = dedupe((per.get(it) || []).concat(propagate(it, values)))
-        .filter(b => !manual.some(m => overlapRatio(b,m) > 0.6));
-      if(found.length){ imgs++; total += found.length; }
-      next = manual.concat(found);
-    }
-    it.red = next; it._rev = (it._rev || 0) + 1;
+    const found = (auto.get(it) || []).filter(b => !manual.some(m => overlapRatio(b,m) > 0.6));
+    if(found.length){ imgs++; total += found.length; }
+    it.red = manual.concat(found); it._rev = (it._rev || 0) + 1;
   });
   render();
-  if(report){
-    toast(total ? total + ' bagian disensor di ' + imgs + ' screenshot. Cek lagi sebelum diunduh.'
-                : 'Tidak ada data yang cocok dengan pilihanmu.');
-  }
+  return { total, imgs };
+}
+function showAutoResult({ total, imgs }){
+  toast(total ? total + ' bagian disensor di ' + imgs + ' screenshot. Cek lagi sebelum diunduh.'
+              : 'Tidak ada data yang cocok dengan pilihanmu.');
 }
 
 /* ====================== encoder untuk export ====================== */
@@ -2422,10 +2436,10 @@ function updateAutoUI(){
 }
 $('#bAutoRun').addEventListener('click', ()=>{
   S.auto.applied = catsNow(); S.auto.on = true;
-  if(S.items.some(it => !it._ocr)) scanAll(false); else applyAuto(true);
+  if(S.items.some(it => !it._ocr)) scanAll(); else showAutoResult(applyAuto());
 });
 $('#bAutoClear').addEventListener('click', ()=>{
-  S.auto.on = false; S.auto.applied = null; applyAuto(false);
+  S.auto.on = false; S.auto.applied = null; applyAuto();
   toast('Hasil sensor otomatis dihapus. Sensor manual tetap ada.');
 });
 [...document.querySelectorAll('.cats input')].forEach(c=>{
@@ -2492,6 +2506,13 @@ $('#mDate').value = new Date().toISOString().slice(0,10);
 S.meta.date = $('#mDate').value;
 syncView();
 render();
+
+// Akses internal untuk halaman tes (tests/run.html). Hanya aktif bila halaman dibuka
+// dengan parameter ?test, jadi tidak terpakai pada penggunaan biasa.
+if(new URLSearchParams(location.search).has('test')){
+  window.__qaShotDoc = { S, detect, findLabels, labelCandidates, valueOk, nikLike, dobLike, wordEq,
+    computeAutoBoxes, applyAuto, addedMessage, updateAutoUI, PATTERNS };
+}
 })();
 </script>
 </body>

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tes QA Shot Doc</title>
+<style>
+  body{font:14px/1.5 system-ui,sans-serif;margin:16px;color:#1d1d1f;background:#fff}
+  h1{font-size:18px;margin:0 0 4px}
+  .sum{margin:0 0 12px;color:#555}
+  .sum.ok{color:#13795b}.sum.bad{color:#c62828}
+  ul{list-style:none;padding:0;margin:0}
+  li{padding:4px 0;border-bottom:1px solid #eee}
+  li b{display:inline-block;width:44px}
+  li.ok b{color:#13795b}li.bad b{color:#c62828}
+  li small{color:#888}
+  li .err{display:block;color:#c62828;margin-left:44px}
+  label{margin-right:12px}
+  iframe{width:420px;height:760px;border:1px solid #ddd;margin-top:16px}
+</style>
+</head>
+<body>
+<h1>Tes QA Shot Doc</h1>
+<p class="sum" id="sum">Memuat aplikasi…</p>
+<p>
+  <label><input type="checkbox" id="gUnit" checked> Unit (cepat)</label>
+  <label><input type="checkbox" id="gE2e" checked> End-to-end (OCR sungguhan, ±1–2 menit)</label>
+  <button id="again">Jalankan lagi</button>
+</p>
+<ul id="list"></ul>
+<iframe id="app" title="Aplikasi yang dites"></iframe>
+
+<script src="harness.js"></script>
+<script src="fixtures.js"></script>
+<script src="unit.js"></script>
+<script src="e2e.js"></script>
+<script>
+// Aplikasi dimuat ulang di iframe setiap kali tes dijalankan, supaya tiap putaran mulai dari keadaan kosong.
+// ?test membuat aplikasi membuka fungsi internalnya lewat window.__qaShotDoc.
+const frame = document.getElementById('app');
+window.APP = () => frame.contentWindow.__qaShotDoc;
+
+function loadApp(){
+  return new Promise(resolve => {
+    frame.onload = resolve;
+    frame.src = '../index.html?test&t=' + Date.now();
+  });
+}
+
+async function runAll(){
+  const groups = [['gUnit','unit'], ['gE2e','e2e']]
+    .filter(([id]) => document.getElementById(id).checked).map(([, g]) => g);
+  const list = document.getElementById('list'), sum = document.getElementById('sum');
+  list.innerHTML = ''; sum.className = 'sum'; sum.textContent = 'Menjalankan…';
+  window.__testResult = null;
+  await loadApp();
+  if(!window.APP()){
+    sum.className = 'sum bad';
+    sum.textContent = 'Aplikasi tidak membuka hook tes. Buka halaman ini lewat server http, bukan file://.';
+    return;
+  }
+  const results = await T.run(groups, r => {
+    const li = document.createElement('li');
+    li.className = r.ok ? 'ok' : 'bad';
+    li.innerHTML = '<b>' + (r.ok ? 'LULUS' : 'GAGAL') + '</b> ';
+    li.append('[' + r.group + '] ' + r.name + ' ');
+    const ms = document.createElement('small'); ms.textContent = r.ms + ' ms'; li.append(ms);
+    if(r.error){ const e = document.createElement('span'); e.className = 'err'; e.textContent = r.error; li.append(e); }
+    list.append(li);
+  });
+  const failed = results.filter(r => !r.ok).length;
+  sum.className = 'sum ' + (failed ? 'bad' : 'ok');
+  sum.textContent = failed ? failed + ' dari ' + results.length + ' tes gagal.' : 'Semua ' + results.length + ' tes lulus.';
+  document.title = (failed ? 'GAGAL ' : 'LULUS ') + (results.length - failed) + '/' + results.length;
+  window.__testResult = { passed: results.length - failed, failed, results };
+}
+document.getElementById('again').addEventListener('click', runAll);
+runAll();
+</script>
+</body>
+</html>

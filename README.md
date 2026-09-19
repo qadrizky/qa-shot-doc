@@ -227,3 +227,26 @@ dan non-SIMD, serta `eng.traineddata` dari tessdata_fast).
   berbeda dari PDF. Jumlah kolom, ukuran gambar, dan isi tetap sama.
 - Kualitas gambar bisa dipilih: Normal (150 DPI), Tinggi (220 DPI), atau Asli
   tanpa kompresi.
+
+### Menjalankan tes
+
+Tes ada di folder `tests/` dan berjalan di browser, tanpa instalasi apa pun.
+Karena pemindai butuh http, jalankan server lokal dari folder proyek:
+
+```bash
+python3 -m http.server 8000 --bind 127.0.0.1
+```
+
+Lalu buka `http://127.0.0.1:8000/tests/run.html`.
+
+- **Unit** (±1 detik) menguji logika deteksi dengan hasil OCR tiruan: pola NIK,
+  tanggal lahir, nomor HP, pasangan label–nilai, validasi nilai, dan penyebaran
+  nilai ke screenshot lain. Setiap kasus mengunci satu kesalahan yang pernah terjadi.
+- **End-to-end** (±1 menit) memuat aplikasi di iframe, menambahkan 7 screenshot
+  sintetis, lalu menjalankan alur seperti pengguna: centang data, klik Pindai,
+  ubah centang, Terapkan. Cakupan sensor diukur untuk tiga pilihan centang
+  (bawaan, data teks saja, foto saja): semua target harus tertutup dan tidak
+  ada yang salah tersensor.
+
+Semua data di tes ini fiktif. Hasil akhir juga muncul di judul tab
+(`LULUS 29/29` atau `GAGAL …`), sehingga bisa dibaca otomatis.
