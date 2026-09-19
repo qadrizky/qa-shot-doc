@@ -249,4 +249,4 @@ Lalu buka `http://127.0.0.1:8000/tests/run.html`.
   ada yang salah tersensor.
 
 Semua data di tes ini fiktif. Hasil akhir juga muncul di judul tab
-(`LULUS 29/29` atau `GAGAL …`), sehingga bisa dibaca otomatis.
+(misalnya `LULUS 32/32` atau `GAGAL …`), sehingga bisa dibaca otomatis.

@@ -108,6 +108,35 @@
     expect(Math.round(found[0].y * 2400)).toBeAtLeast(440);
   });
 
+  /* ---------- tata letak & gambar tersensor ---------- */
+  test('unit', 'Gambar mengikuti lebar sel; gambar sangat tinggi dibatasi dengan rasio tetap', () => {
+    const normal = app().fitImage({ w:1080, h:2400 }, 90, 250);
+    expect(normal.w).toBe(90); expect(normal.h).toBe(200);
+    const tall = app().fitImage({ w:1000, h:10000 }, 90, 250);
+    expect(tall.h).toBe(250); expect(tall.w).toBe(25);
+  });
+  test('unit', 'Layout menaruh sejumlah kolom yang dipilih per baris', () => {
+    const S = app().S, saved = { items:S.items, cols:S.opts.cols };
+    try{
+      S.items = Array.from({ length:5 }, (_, i) => ({ id:900 + i, w:1080, h:2400, name:'x.png', red:[] }));
+      S.opts.cols = 3;
+      // baris = halaman + posisi vertikal (baris kedua bisa pindah ke halaman berikutnya)
+      const rows = app().computeLayout().flatMap((p, n) => p.blocks.filter(b => b.type === 'img').map(b => n + ':' + b.y));
+      expect(rows.length).toBe(5);
+      expect(rows.filter(r => r === rows[0]).length).toBe(3);
+      expect(rows.filter(r => r === rows[3]).length).toBe(2);
+    }finally{ S.items = saved.items; S.opts.cols = saved.cols; }
+  });
+  test('unit', 'Blok merah dibakar ke piksel gambar hasil', () => {
+    const img = document.createElement('canvas'); img.width = 100; img.height = 200;
+    const g = img.getContext('2d'); g.fillStyle = '#00ff00'; g.fillRect(0, 0, 100, 200);
+    const out = app().redactedCanvas({ _img:img, w:100, h:200, red:[{ x:0, y:0, w:.5, h:.5, s:'red' }] }, 50);
+    expect(out.height).toBe(100);
+    const px = (x, y) => Array.from(out.getContext('2d').getImageData(x, y, 1, 1).data).slice(0, 3).join(',');
+    expect(px(10, 10)).toBe('224,27,27');
+    expect(px(40, 80)).toBe('0,255,0');
+  });
+
   /* ---------- pesan ---------- */
   test('unit', 'Pesan tambah screenshot menghitung yang benar-benar masuk', () => {
     const msg = app().addedMessage(4, ['foto.heic']);

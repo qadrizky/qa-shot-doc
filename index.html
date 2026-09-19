@@ -919,27 +919,42 @@ function drawRedacted(ctx, item, dw, dh){
   }
 }
 const hasRed = it => !!(it.red && it.red.length);
+// Gambar tersensor selebar `width` px. Latar putih supaya bagian transparan PNG tidak jadi hitam.
+function redactedCanvas(item, width, boxes = item.red){
+  const c = el('canvas');
+  c.width = width; c.height = Math.max(1, Math.round(item.h * (width/item.w)));
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+  drawRedacted(ctx, { ...item, red:boxes }, c.width, c.height);
+  return c;
+}
 // Gambar untuk ditampilkan di layar: versi tersensor, di-cache sampai kotaknya berubah.
 function displaySrc(item){
   if(!hasRed(item)) return item.dataURL;
   if(item._dispRev === item._rev && item._disp) return item._disp;
-  const w = Math.min(DISPLAY_W, item.w), h = Math.round(item.h * (w/item.w));
-  const c = el('canvas'); c.width = w; c.height = h;
-  const ctx = c.getContext('2d');
-  ctx.fillStyle = '#fff'; ctx.fillRect(0,0,w,h);
-  drawRedacted(ctx, item, w, h);
-  item._disp = c.toDataURL('image/jpeg', 0.9);
+  item._disp = redactedCanvas(item, Math.min(DISPLAY_W, item.w)).toDataURL('image/jpeg', 0.9);
   item._dispRev = item._rev;
   return item._disp;
 }
 
 /* ====================== mesin layout ======================
    Satu sumber kebenaran: dipakai preview, PDF, dan DOCX. Semua satuan mm. */
-function computeLayout(){
-  const o = S.opts, [pw,ph] = pageDims();
-  const m = o.margin, gap = o.gap, N = o.cols;
+function gridGeometry(){
+  const o = S.opts, [pw, ph] = pageDims();
+  const m = o.margin, gap = o.gap, cols = o.cols;
   const contentW = pw - 2*m, contentH = ph - 2*m;
-  const cellW = (contentW - (N-1)*gap) / N;
+  const cellW = (contentW - (cols-1)*gap) / cols;
+  const maxImgH = contentH - (needCap() ? CAP_LH*2 + CAP_GAP : 0);   // ruang untuk keterangan
+  return { pw, ph, m, gap, cols, contentW, cellW, maxImgH };
+}
+// Gambar selebar sel; gambar yang sangat tinggi dibatasi setinggi area isi halaman.
+function fitImage(item, cellW, maxImgH){
+  const h = item.h * (cellW/item.w);
+  return h <= maxImgH ? { w:cellW, h } : { w:item.w * (maxImgH/item.h), h:maxImgH };
+}
+function computeLayout(){
+  const { ph, m, gap, cols:N, contentW, cellW, maxImgH } = gridGeometry();
   const pages = [];
   let page = { blocks:[] }; pages.push(page);
   let y = m;
@@ -950,13 +965,7 @@ function computeLayout(){
   const withCap = needCap();
   for(let i=0; i<S.items.length; i+=N){
     const rowItems = S.items.slice(i, i+N);
-    const maxImgH = contentH - (withCap ? CAP_LH*2 + CAP_GAP : 0);
-
-    const placed = rowItems.map((it,j)=>{
-      let w = cellW, h = it.h * (cellW/it.w);
-      if(h > maxImgH){ const s = maxImgH/it.h; h = maxImgH; w = it.w*s; }   // gambar sangat tinggi: batasi
-      return { it, w, h, idx:i+j };
-    });
+    const placed = rowItems.map((it,j)=>({ it, ...fitImage(it, cellW, maxImgH), idx:i+j }));
 
     const imgH = Math.max(...placed.map(p=>p.h));
     let capH = 0;
@@ -1309,12 +1318,7 @@ function paintRedactor(opts){
   $('#rdUndo').disabled = $('#rdClear').disabled = !RD.boxes.length;
 }
 function buildPreview(item, boxes){
-  const w = Math.min(DISPLAY_W, item.w), h = Math.round(item.h * (w/item.w));
-  const c = el('canvas'); c.width = w; c.height = h;
-  const ctx = c.getContext('2d');
-  ctx.fillStyle = '#fff'; ctx.fillRect(0,0,w,h);
-  drawRedacted(ctx, { ...item, red:boxes }, w, h);
-  return c.toDataURL('image/jpeg', 0.9);
+  return redactedCanvas(item, Math.min(DISPLAY_W, item.w), boxes).toDataURL('image/jpeg', 0.9);
 }
 const clamp = (v,lo,hi) => Math.min(hi, Math.max(lo, v));
 (function bindRedactor(){
@@ -2202,13 +2206,7 @@ function encodeItem(item, targetWmm){
   const key = item.id + ':' + item._rev + ':' + S.opts.dpi + ':' + targetPx;
   if(encCache.has(key)) return encCache.get(key);
 
-  const c = el('canvas');
-  c.width  = targetPx;
-  c.height = Math.max(1, Math.round(item.h * (targetPx/item.w)));
-  const ctx = c.getContext('2d');
-  ctx.imageSmoothingQuality = 'high';
-  ctx.fillStyle = '#fff'; ctx.fillRect(0,0,c.width,c.height);   // jaga transparansi PNG tetap putih
-  drawRedacted(ctx, item, c.width, c.height);
+  const c = redactedCanvas(item, targetPx);
   const out = orig ? { data:c.toDataURL('image/png'), fmt:'PNG' }
                    : { data:c.toDataURL('image/jpeg', 0.92), fmt:'JPEG' };
   encCache.set(key, out);
@@ -2281,10 +2279,8 @@ async function exportDOCX(){
   veil(true, 'Membuat DOCX…'); await yieldUI();
   try{
     const D = window.docx;
-    const o = S.opts, [pw,ph] = pageDims();
-    const m = o.margin, N = o.cols, gap = o.gap;
-    const contentW = pw - 2*m, contentH = ph - 2*m;
-    const cellW = (contentW - (N-1)*gap) / N;
+    const o = S.opts;
+    const { pw, ph, m, gap, cols:N, contentW, cellW, maxImgH } = gridGeometry();
     const mm2px = mm => Math.round(mm/25.4*96);
     const NONE  = { style: D.BorderStyle.NONE, size:0, color:'FFFFFF' };
     const THIN  = { style: D.BorderStyle.SINGLE, size:4, color:'D4D8DE' };
@@ -2305,7 +2301,6 @@ async function exportDOCX(){
         border:{ bottom:{ style:D.BorderStyle.SINGLE, size:6, color:'D4D8DE' } } }));
     }
 
-    const maxImgH = contentH - (needCap() ? CAP_LH*2 + CAP_GAP : 0);
     const rows = [];
     for(let i=0;i<S.items.length;i+=N){
       const cells = [];
@@ -2313,8 +2308,7 @@ async function exportDOCX(){
         const it = S.items[i+j];
         const kids = [];
         if(it){
-          let w = cellW, h = it.h*(cellW/it.w);
-          if(h > maxImgH){ const s = maxImgH/it.h; h = maxImgH; w = it.w*s; }
+          const { w, h } = fitImage(it, cellW, maxImgH);
           const { data, fmt } = encodeItem(it, w);
           kids.push(new D.Paragraph({ alignment:D.AlignmentType.CENTER, spacing:{after:40},
             children:[ new D.ImageRun({ data:dataURLtoBytes(data), type: fmt === 'PNG' ? 'png' : 'jpg',
@@ -2520,7 +2514,7 @@ render();
 // dengan parameter ?test, jadi tidak terpakai pada penggunaan biasa.
 if(new URLSearchParams(location.search).has('test')){
   window.__qaShotDoc = { S, detect, findLabels, labelCandidates, valueOk, nikLike, dobLike, wordEq,
-    computeAutoBoxes, applyAuto, addedMessage, updateAutoUI, PATTERNS };
+    computeAutoBoxes, applyAuto, addedMessage, updateAutoUI, PATTERNS, computeLayout, fitImage, redactedCanvas };
 }
 })();
 </script>
