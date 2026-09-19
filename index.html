@@ -658,25 +658,9 @@ function(r){"object"==typeof e&&void 0!==t?t.exports=r():"function"==typeof defi
         <div class="catgrp"><span>Foto</span>
           <span class="catact"><button type="button" class="linkbtn" data-all="1">Pilih semua</button> ·
             <button type="button" class="linkbtn" data-all="0">Kosongkan</button></span></div>
-        <div class="cats">
-          <label class="chk"><input type="checkbox" data-cat="ktpPhoto" checked> Foto KTP</label>
-          <label class="chk"><input type="checkbox" data-cat="selfie" checked> Foto selfie</label>
-          <label class="chk"><input type="checkbox" data-cat="otherPhoto"> Foto lainnya</label>
-        </div>
+        <div class="cats" data-group="photo"></div>
         <div class="catgrp"><span>Data</span></div>
-        <div class="cats">
-          <label class="chk"><input type="checkbox" data-cat="nik" checked> NIK</label>
-          <label class="chk"><input type="checkbox" data-cat="pob" checked> Tempat lahir</label>
-          <label class="chk"><input type="checkbox" data-cat="dob" checked> Tanggal lahir</label>
-          <label class="chk"><input type="checkbox" data-cat="mother" checked> Nama ibu kandung</label>
-          <label class="chk"><input type="checkbox" data-cat="name" checked> Nama</label>
-          <label class="chk"><input type="checkbox" data-cat="npwp" checked> NPWP</label>
-          <label class="chk"><input type="checkbox" data-cat="phone" checked> No. HP</label>
-          <label class="chk"><input type="checkbox" data-cat="email" checked> Email</label>
-          <label class="chk"><input type="checkbox" data-cat="password" checked> Password</label>
-          <label class="chk"><input type="checkbox" data-cat="account"> No. rekening/kartu</label>
-          <label class="chk"><input type="checkbox" data-cat="address"> Alamat</label>
-        </div>
+        <div class="cats" data-group="data"></div>
         <button class="btn primary" id="bAutoRun" style="width:100%;margin-top:6px">Pindai screenshot</button>
         <p class="hint" id="autoStatus" style="margin:7px 0 0"></p>
         <button type="button" class="linkbtn" id="bAutoClear" hidden style="margin-top:6px">Hapus hasil sensor otomatis</button>
@@ -805,9 +789,8 @@ const S = {
   opts: { cols:2, gap:4, margin:12, size:'a4', orient:'portrait',
           header:true, num:true, cap:true, border:true, dpi:'220' },
   // cats = pilihan di checklist; applied = pilihan yang dipakai saat terakhir klik Pindai/Terapkan
-  auto: { on:false, applied:null, cats:{ ktpPhoto:true, selfie:true, otherPhoto:false,
-                           nik:true, pob:true, dob:true, mother:true, name:true,
-                           npwp:true, phone:true, email:true, password:true, account:false, address:false } },
+  // cats diisi dari checklist, yang dibuat dari CATEGORIES
+  auto: { on:false, applied:null, cats:{} },
   meta: { title:'', tester:'', date:'', device:'', build:'' }
 };
 let uid = 0;
@@ -1469,13 +1452,6 @@ function addedMessage(added, failed){
    satu angka lebih berbahaya daripada tidak ada deteksi sama sekali, karena
    membuat orang berhenti memeriksa.                                              */
 const OCR_MIN_W = 1400, OCR_MAX_W = 1800;
-const PHOTO_CATS = ['ktpPhoto', 'selfie', 'otherPhoto'];
-// Nilai dari kategori ini dicari ulang di semua gambar: data yang sama sering muncul
-// lagi tanpa label, misalnya nama di gambar kartu debit atau di halaman konfirmasi.
-const PROPAGATE = ['name', 'mother', 'nik', 'npwp', 'email', 'phone', 'password', 'account', 'pob', 'dob'];
-// Nama kota dan tanggal umum dipakai di teks lain (alamat, tanggal transaksi), jadi untuk
-// kategori ini hanya baris yang isinya persis nilai itu yang ikut ditutup.
-const PROPAGATE_WHOLE = ['pob', 'dob'];
 const MONTHS = 'jan|feb|mar|apr|mei|may|jun|jul|agu|agt|aug|sep|okt|oct|nov|des|dec';
 const digits = t => (t.match(/\d/g) || []).join('');
 // Huruf yang sering tertukar oleh OCR disamakan, dipakai saat mencocokkan label.
@@ -1484,45 +1460,10 @@ const toks = t => String(t).toLowerCase().replace(/[’'`]/g,' ').replace(/[^a-z
   .split(' ').filter(Boolean);
 
 /* ---------- label ----------
-   cats: kategori yang dilindungi nilai label ini.
-   split: label gabungan tempat+tanggal lahir — kata bertanggal ke 'dob', sisanya 'pob'.
-   end: label boleh berada di AKHIR baris pendek ("Mobile Banking Password",
-        "Active Email Address"); label lain harus di awal baris.
-   loose: label generik satu kata. Nilai di bawahnya hanya diterima bila hurufnya
-        lebih besar dari label (pola floating label), supaya opsi dalam daftar seperti
-        "Telephone / SMS / E-mail" tidak dianggap pasangan label–nilai.          */
-const LABELS = [
-  { cats:['pob','dob'], split:true, v:['tempat tgl lahir','tempat tanggal lahir','tempat dan tanggal lahir',
-      'tempat tgl lhr','tempat tanggal lhr','place date of birth','place and date of birth','ttl'] },
-  { cats:['mother'], v:['nama gadis ibu kandung','nama ibu kandung','ibu kandung','nama ibu',
-      'mother s maiden name','mothers maiden name','maiden name','mother s name','mothers name','mother name'] },
-  { cats:['pob'], v:['tempat lahir','kota lahir','place of birth','birth place','birthplace'] },
-  { cats:['pob'], loose:true, v:['pob'] },
-  { cats:['dob'], v:['tanggal lahir','tgl lahir','tanggal kelahiran','date of birth','birth date','birthdate'] },
-  { cats:['dob'], loose:true, v:['dob'] },
-  { cats:['nik'], v:['nomor induk kependudukan','identity card number','id card number','e ktp number',
-      'ktp number','nik number','identity number','nomor e ktp','no e ktp','nomor ktp','no ktp','nik ktp',
-      'nomor identitas','no identitas','id number','nik'] },
-  { cats:['npwp'], v:['nomor npwp','no npwp','npwp number','npwp'] },
-  { cats:['name'], v:['nama sesuai identitas','nama sesuai ktp','nama lengkap','nama pada kartu','name on card',
-      'cardholder name','card holder name','full name','nama depan','nama tengah','nama belakang',
-      'nama nasabah','nama pemilik','nama pemohon','first name','middle name','last name'] },
-  { cats:['name'], loose:true, v:['nama','name'] },
-  { cats:['address'], v:['alamat domisili','alamat lengkap','full address','home address','residential address',
-      'office address','alamat kantor','domisili'] },
-  { cats:['address'], loose:true, v:['alamat','address'] },
-  { cats:['phone'], v:['mobile phone number','handphone number','mobile number','phone number','nomor handphone',
-      'no handphone','nomor telepon','no telepon','nomor hp','no hp','no telp'] },
-  { cats:['phone'], loose:true, v:['handphone','ponsel','phone'] },
-  { cats:['email'], end:true, v:['e mail address','email address','ulangi alamat email','alamat email'] },
-  { cats:['account'], v:['masukan kembali nomor kartu debit','masukkan kembali nomor kartu debit',
-      'masukan nomor kartu debit','masukkan nomor kartu debit','nomor kartu debit','no kartu debit',
-      'nomor kartu kredit','no kartu kredit','card number','nomor rekening','no rekening','account number'] },
-  { cats:['email'], loose:true, end:true, v:['email','e mail','surel'] },
-  { cats:['password'], end:true, v:['kata sandi','password'] }
-].flatMap(L => L.v.map(v => ({ cats:L.cats, split:!!L.split, end:!!L.end, loose:!!L.loose,
-                               words:v.split(' ').map(conf) })))
- .sort((a,b) => b.words.length - a.words.length);
+   Kosakata label per kategori ada di CATEGORIES (di bawah). Yang di sini hanya label
+   gabungan tempat+tanggal lahir: kata bertanggal pada nilainya masuk 'dob', sisanya 'pob'. */
+const BIRTH_LABELS = ['tempat tgl lahir','tempat tanggal lahir','tempat dan tanggal lahir',
+  'tempat tgl lhr','tempat tanggal lhr','place date of birth','place and date of birth','ttl'];
 // Kata pelengkap setelah label yang bukan bagian dari nilai:
 // "(sesuai KTP)", "as per Kartu Keluarga", "based on e-KTP", "*", "(wajib)".
 const LABEL_TAIL = new Set(['sesuai','dengan','ktp','e','ektp','kk','kartu','keluarga','as','per','based',
@@ -1566,24 +1507,110 @@ function dobLike(m){
   if((g = m.match(/(\d{4})\s*$/)))                                         return birthYear(+g[1]);
   return false;
 }
-const PATTERNS = {
-  nik:    [{ re:/(?<![0-9A-Za-z])\d(?:[ .\-]?\d){15}(?![0-9A-Za-z])/g, ok:nikLike }],
-  npwp:   [{ re:/\b\d{2}[.\-]\d{3}[.\-]\d{3}[.\-]?\d?[.\-]?\d{3}[.\-]\d{3}\b/g,
-             ok:m=>[15,16].includes(digits(m).length) }],
-  // Tanggal hanya dianggap tanggal lahir bila tahunnya masuk akal untuk kelahiran,
-  // jadi tanggal transaksi/pengajuan tidak ikut tersensor.
-  dob:    [{ re:/\b\d{1,2}\s?[-/.]\s?\d{1,2}\s?[-/.]\s?\d{4}\b/g, ok:dobLike },
-           { re:/\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b/g, ok:dobLike },
-           { re:new RegExp('\\b\\d{1,2}[\\s\\-/.]+(?:'+MONTHS+')[a-z]*\\.?,?[\\s\\-/.]+\\d{4}\\b','gi'), ok:dobLike },
-           { re:new RegExp('\\b(?:'+MONTHS+')[a-z]*\\.?\\s+\\d{1,2},?\\s+\\d{4}\\b','gi'), ok:dobLike }],
-  // nomor seluler Indonesia: 08[1-9]… / +628[1-9]…, tidak boleh menempel di tengah kode lain
-  phone:  [{ re:/(?<![0-9A-Za-z])(?:\+?62|0)\s?8[1-9][\d\s.\-]{6,13}\d/g, ok:m=>{ const d = digits(m).length; return d>=10 && d<=15; } }],
-  email:  [{ re:/[A-Za-z0-9._%+\-]+\s?@\s?[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/g }],
-  // tidak boleh menempel pada huruf: kode dokumen seperti "ABC260800000015" bukan nomor rekening
-  // …dan nominal berformat ribuan ("2.000.000.000") juga bukan
-  account:[{ re:/(?<![0-9A-Za-z])\d(?:[ .\-]?\d){9,18}(?![0-9A-Za-z])/g,
-             ok:m=>{ const d = digits(m).length; return d>=10 && d<=19 && !/^\d{1,3}([.,]\d{3}){2,}$/.test(m.trim()); } }]
+
+/* ---------- validasi nilai ----------
+   Tanpa ini, judul dialog "Nama Ibu Kandung" memasangkan kalimat petunjuk di bawahnya
+   sebagai nilai, dan satu nilai NPWP yang keliru ("Merchant") ikut disebarkan ke semua
+   layar yang memuat kata itu. */
+const FILLER = new Set(['data','di','dan','yang','atau','untuk','the','of','and','or','in','at']);
+const INSTRUCTION = /\b(pastikan|masukkan|masukan|silakan|silahkan|please|enter|tanpa gelar|contoh|example)\b/i;
+const textOf = ws => ws.map(w=>w.t).join(' ');
+// Nomor: cukup banyak digit, atau nomor yang sebagian disamarkan ("****1234").
+const numberWith = minDigits => ws => {
+  const t = textOf(ws), d = digits(t).length;
+  return d >= minDigits || (/[*•x]{3,}/i.test(t) && d >= 3);
 };
+// Butir daftar ("1. Sesuai data di Kartu Keluarga") atau frasa yang isinya kebanyakan
+// kata pelengkap label bukanlah nama.
+function looksLikeName(ws){
+  const t = textOf(ws), tk = toks(t), filler = tk.filter(x => LABEL_TAIL.has(x) || FILLER.has(x)).length;
+  return /[a-z]{2}/i.test(t) && !/\d{3,}/.test(t) && ws.length <= 5 && !/:\s*$/.test(t) &&
+         !INSTRUCTION.test(t) && !/^\d+[.)]/.test(t) && filler*2 < tk.length;
+}
+
+/* ---------- kategori ----------
+   Satu-satunya tempat mendefinisikan kategori sensor. Menambah kategori cukup di sini:
+   checklist, label, pola, validasi, dan penyebaran nilai mengikuti.
+   group     : 'photo' (ditentukan oleh deteksi foto) atau 'data' (teks hasil OCR)
+   on        : tercentang secara bawaan
+   labels    : label yang nilainya berada di samping/bawahnya
+   loose     : label generik satu kata. Nilai di bawahnya hanya diterima bila hurufnya
+               lebih besar dari label (pola floating label), supaya opsi dalam daftar
+               seperti "Telephone / SMS / E-mail" tidak dianggap pasangan label–nilai.
+   labelAtEnd: label boleh berada di AKHIR baris pendek ("Mobile Banking Password",
+               "Active Email Address"); label lain harus di awal baris.
+   patterns  : nilai yang dikenali dari bentuknya saja, tanpa label
+   valid     : syarat nilai di samping label
+   spread    : nilai yang ditemukan dicari ulang di semua gambar, karena data yang sama
+               sering muncul lagi tanpa label (nama di kartu debit, halaman konfirmasi).
+               'line' = hanya baris yang isinya persis nilai itu: nama kota dan tanggal
+               umum dipakai di teks lain (alamat, tanggal transaksi).                   */
+const CATEGORIES = [
+  { id:'ktpPhoto',   group:'photo', ui:'Foto KTP',     on:true },
+  { id:'selfie',     group:'photo', ui:'Foto selfie',  on:true },
+  { id:'otherPhoto', group:'photo', ui:'Foto lainnya', on:false },
+  { id:'nik', group:'data', ui:'NIK', on:true, spread:'word', valid:numberWith(8),
+    labels:['nomor induk kependudukan','identity card number','id card number','e ktp number',
+      'ktp number','nik number','identity number','nomor e ktp','no e ktp','nomor ktp','no ktp','nik ktp',
+      'nomor identitas','no identitas','id number','nik'],
+    patterns:[{ re:/(?<![0-9A-Za-z])\d(?:[ .\-]?\d){15}(?![0-9A-Za-z])/g, ok:nikLike }] },
+  { id:'pob', group:'data', ui:'Tempat lahir', on:true, spread:'line', valid:looksLikeName,
+    labels:['tempat lahir','kota lahir','place of birth','birth place','birthplace'], loose:['pob'] },
+  { id:'dob', group:'data', ui:'Tanggal lahir', on:true, spread:'line',
+    valid:ws => /\d/.test(textOf(ws)) || new RegExp('('+MONTHS+')', 'i').test(textOf(ws)),
+    labels:['tanggal lahir','tgl lahir','tanggal kelahiran','date of birth','birth date','birthdate'], loose:['dob'],
+    // Tanggal hanya dianggap tanggal lahir bila tahunnya masuk akal untuk kelahiran,
+    // jadi tanggal transaksi/pengajuan tidak ikut tersensor.
+    patterns:[{ re:/\b\d{1,2}\s?[-/.]\s?\d{1,2}\s?[-/.]\s?\d{4}\b/g, ok:dobLike },
+              { re:/\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b/g, ok:dobLike },
+              { re:new RegExp('\\b\\d{1,2}[\\s\\-/.]+(?:'+MONTHS+')[a-z]*\\.?,?[\\s\\-/.]+\\d{4}\\b','gi'), ok:dobLike },
+              { re:new RegExp('\\b(?:'+MONTHS+')[a-z]*\\.?\\s+\\d{1,2},?\\s+\\d{4}\\b','gi'), ok:dobLike }] },
+  { id:'mother', group:'data', ui:'Nama ibu kandung', on:true, spread:'word', valid:looksLikeName,
+    labels:['nama gadis ibu kandung','nama ibu kandung','ibu kandung','nama ibu',
+      'mother s maiden name','mothers maiden name','maiden name','mother s name','mothers name','mother name'] },
+  { id:'name', group:'data', ui:'Nama', on:true, spread:'word', valid:looksLikeName,
+    labels:['nama sesuai identitas','nama sesuai ktp','nama lengkap','nama pada kartu','name on card',
+      'cardholder name','card holder name','full name','nama depan','nama tengah','nama belakang',
+      'nama nasabah','nama pemilik','nama pemohon','first name','middle name','last name'], loose:['nama','name'] },
+  { id:'npwp', group:'data', ui:'NPWP', on:true, spread:'word', valid:numberWith(8),
+    labels:['nomor npwp','no npwp','npwp number','npwp'],
+    patterns:[{ re:/\b\d{2}[.\-]\d{3}[.\-]\d{3}[.\-]?\d?[.\-]?\d{3}[.\-]\d{3}\b/g,
+                ok:m=>[15,16].includes(digits(m).length) }] },
+  { id:'phone', group:'data', ui:'No. HP', on:true, spread:'word', valid:numberWith(7),
+    labels:['mobile phone number','handphone number','mobile number','phone number','nomor handphone',
+      'no handphone','nomor telepon','no telepon','nomor hp','no hp','no telp'], loose:['handphone','ponsel','phone'],
+    // nomor seluler Indonesia: 08[1-9]… / +628[1-9]…, tidak boleh menempel di tengah kode lain
+    patterns:[{ re:/(?<![0-9A-Za-z])(?:\+?62|0)\s?8[1-9][\d\s.\-]{6,13}\d/g, ok:m=>{ const d = digits(m).length; return d>=10 && d<=15; } }] },
+  { id:'email', group:'data', ui:'Email', on:true, spread:'word', valid:ws => /@/.test(textOf(ws)), labelAtEnd:true,
+    labels:['e mail address','email address','ulangi alamat email','alamat email'], loose:['email','e mail','surel'],
+    patterns:[{ re:/[A-Za-z0-9._%+\-]+\s?@\s?[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/g }] },
+  { id:'password', group:'data', ui:'Password', on:true, spread:'word', valid:ws => ws.length <= 3, labelAtEnd:true,
+    labels:['kata sandi','password'] },
+  { id:'account', group:'data', ui:'No. rekening/kartu', on:false, spread:'word', valid:numberWith(8),
+    labels:['masukan kembali nomor kartu debit','masukkan kembali nomor kartu debit',
+      'masukan nomor kartu debit','masukkan nomor kartu debit','nomor kartu debit','no kartu debit',
+      'nomor kartu kredit','no kartu kredit','card number','nomor rekening','no rekening','account number'],
+    // tidak boleh menempel pada huruf: kode dokumen seperti "ABC260800000015" bukan nomor rekening
+    // …dan nominal berformat ribuan ("2.000.000.000") juga bukan
+    patterns:[{ re:/(?<![0-9A-Za-z])\d(?:[ .\-]?\d){9,18}(?![0-9A-Za-z])/g,
+                ok:m=>{ const d = digits(m).length; return d>=10 && d<=19 && !/^\d{1,3}([.,]\d{3}){2,}$/.test(m.trim()); } }] },
+  { id:'address', group:'data', ui:'Alamat', on:false,
+    labels:['alamat domisili','alamat lengkap','full address','home address','residential address',
+      'office address','alamat kantor','domisili'], loose:['alamat','address'] }
+];
+const CATEGORY = Object.fromEntries(CATEGORIES.map(c => [c.id, c]));
+const PHOTO_CATS = CATEGORIES.filter(c => c.group === 'photo').map(c => c.id);
+const PATTERNS = Object.fromEntries(CATEGORIES.filter(c => c.patterns).map(c => [c.id, c.patterns]));
+const LABELS = [
+  { cats:['pob','dob'], split:true, v:BIRTH_LABELS },
+  ...CATEGORIES.flatMap(c => [
+    { cats:[c.id], end:c.labelAtEnd, v:c.labels || [] },
+    { cats:[c.id], end:c.labelAtEnd, loose:true, v:c.loose || [] }
+  ])
+].flatMap(L => L.v.map(v => ({ cats:L.cats, split:!!L.split, end:!!L.end, loose:!!L.loose,
+                               words:v.split(' ').map(conf) })))
+ .sort((a,b) => b.words.length - a.words.length);
+const valueOk = (cat, ws) => !CATEGORY[cat] || !CATEGORY[cat].valid || CATEGORY[cat].valid(ws);
 
 /* ---------- geometri ---------- */
 const bh = b => b.y1 - b.y0;
@@ -1733,30 +1760,6 @@ function labelCandidates(lab, lines, labelWords, W){
   }
   return out;
 }
-// Validasi nilai per kategori. Tanpa ini, judul dialog "Nama Ibu Kandung" memasangkan
-// kalimat petunjuk di bawahnya sebagai nilai, dan satu nilai NPWP yang keliru ("Merchant")
-// ikut disebarkan ke semua layar yang memuat kata itu.
-const FILLER = new Set(['data','di','dan','yang','atau','untuk','the','of','and','or','in','at']);
-const INSTRUCTION = /\b(pastikan|masukkan|masukan|silakan|silahkan|please|enter|tanpa gelar|contoh|example)\b/i;
-function valueOk(cat, ws){
-  const t = ws.map(w=>w.t).join(' '), d = digits(t).length, masked = /[*•x]{3,}/i.test(t);
-  switch(cat){
-    case 'nik': case 'npwp': case 'account': return d >= 8 || (masked && d >= 3);
-    case 'phone':    return d >= 7 || (masked && d >= 3);
-    case 'dob':      return /\d/.test(t) || new RegExp('('+MONTHS+')', 'i').test(t);
-    case 'email':    return /@/.test(t);
-    case 'password': return ws.length <= 3;
-    case 'name': case 'mother': case 'pob': {
-      // butir daftar ("1. Sesuai data di Kartu Keluarga") atau frasa yang isinya kebanyakan
-      // kata pelengkap label bukanlah nama
-      const tk = toks(t), filler = tk.filter(x => LABEL_TAIL.has(x) || FILLER.has(x)).length;
-      return /[a-z]{2}/i.test(t) && !/\d{3,}/.test(t) && ws.length <= 5 && !/:\s*$/.test(t) &&
-             !INSTRUCTION.test(t) && !/^\d+[.)]/.test(t) && filler*2 < tk.length;
-    }
-    default: return true;
-  }
-}
-
 /* ---------- foto ----------
    Gambar di-subsample tanpa smoothing lalu dibagi sel 6×6. Per sel dihitung:
    - sibuk : banyak warna berbeda tanpa satu warna dominan (tekstur)
@@ -2155,10 +2158,10 @@ function computeAutoBoxes(items, cats){
     const found = detect(it, cats);
     per.set(it, found);
     for(const b of found){
-      if(!b.val || !PROPAGATE.includes(b.cat)) continue;
+      if(!b.val || !CATEGORY[b.cat].spread) continue;
       const v = normVal(b.val);
       if(v.replace(/[^a-z0-9]/g,'').length >= 4 && !seen.has(v)){
-        seen.add(v); values.push({ words:v.split(' '), cat:b.cat, whole:PROPAGATE_WHOLE.includes(b.cat) });
+        seen.add(v); values.push({ words:v.split(' '), cat:b.cat, whole:CATEGORY[b.cat].spread === 'line' });
       }
     }
   }
@@ -2442,6 +2445,12 @@ $('#bAutoClear').addEventListener('click', ()=>{
   S.auto.on = false; S.auto.applied = null; applyAuto();
   toast('Hasil sensor otomatis dihapus. Sensor manual tetap ada.');
 });
+for(const cat of CATEGORIES){
+  const lab = el('label'), box = el('input');
+  lab.className = 'chk'; box.type = 'checkbox'; box.dataset.cat = cat.id; box.checked = cat.on;
+  lab.append(box, ' ' + cat.ui);
+  document.querySelector('.cats[data-group="' + cat.group + '"]').append(lab);
+}
 [...document.querySelectorAll('.cats input')].forEach(c=>{
   S.auto.cats[c.dataset.cat] = c.checked;
   c.addEventListener('change', ()=>{ S.auto.cats[c.dataset.cat] = c.checked; updateAutoUI(); });
