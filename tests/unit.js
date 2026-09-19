@@ -141,6 +141,7 @@
   test('unit', 'Pesan tambah screenshot menghitung yang benar-benar masuk', () => {
     const msg = app().addedMessage(4, ['foto.heic']);
     expect(msg).toContain('4 screenshot ditambahkan');
-    expect(msg).toContain('1 tidak bisa dibuka: foto.heic');
+    expect(msg).toContain('1 file tidak bisa dibuka (foto.heic)');
+    expect(msg).toContain('PNG atau JPG');
   });
 })();

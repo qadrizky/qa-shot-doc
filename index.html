@@ -502,6 +502,7 @@ function(r){"object"==typeof e&&void 0!==t?t.exports=r():"function"==typeof defi
   .chk input{accent-color:var(--accent);width:16px;height:16px}
   .fields input{margin-bottom:7px}
   .hint{color:var(--muted);font-size:12px;line-height:1.45}
+  .show-sm{display:none}
 
   /* ---------- dropzone ---------- */
   .drop{max-width:560px;margin:6vh auto;padding:46px 28px;border:2px dashed var(--line);border-radius:16px;
@@ -575,6 +576,7 @@ function(r){"object"==typeof e&&void 0!==t?t.exports=r():"function"==typeof defi
   .cats .chk{margin-bottom:6px;font-size:13px}
   .catgrp{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:10px 0 4px;
     font-size:11px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  .catact{font-size:12px;color:var(--muted);margin:0 0 2px}
   .linkbtn{border:0;background:none;padding:0;cursor:pointer;color:var(--accent);font:inherit;
     font-size:12px;font-weight:550;letter-spacing:0;text-transform:none}
 
@@ -625,6 +627,7 @@ function(r){"object"==typeof e&&void 0!==t?t.exports=r():"function"==typeof defi
     .stage{padding:12px 12px 84px}
     .modebar{padding:10px 12px 0}
     .hide-sm{display:none !important}
+    .show-sm{display:inline !important}
     .bottombar{display:flex;position:fixed;left:0;right:0;bottom:0;gap:8px;align-items:center;
       padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:var(--panel);
       border-top:1px solid var(--line);z-index:40}
@@ -655,9 +658,9 @@ function(r){"object"==typeof e&&void 0!==t?t.exports=r():"function"==typeof defi
       <div class="grp" id="autoGrp">
         <h3>Sensor otomatis</h3>
         <p class="hint" style="margin:0 0 6px">Centang data yang mau disensor, lalu klik Pindai.</p>
-        <div class="catgrp"><span>Foto</span>
-          <span class="catact"><button type="button" class="linkbtn" data-all="1">Pilih semua</button> ·
-            <button type="button" class="linkbtn" data-all="0">Kosongkan</button></span></div>
+        <div class="catact"><button type="button" class="linkbtn" data-all="1">Centang semua</button> ·
+          <button type="button" class="linkbtn" data-all="0">Kosongkan semua</button></div>
+        <div class="catgrp"><span>Foto</span></div>
         <div class="cats" data-group="photo"></div>
         <div class="catgrp"><span>Data</span></div>
         <div class="cats" data-group="data"></div>
@@ -727,9 +730,10 @@ function(r){"object"==typeof e&&void 0!==t?t.exports=r():"function"==typeof defi
       </div>
       <div class="stage" id="stage">
         <div class="drop" id="drop">
-          <h2>Tarik screenshot ke sini</h2>
-          <p>Bisa beberapa sekaligus, atau tempel dengan Ctrl/⌘ + V.<br>
-             Screenshot tidak diunggah ke server.</p>
+          <h2>Tambahkan screenshot</h2>
+          <p><span class="hide-sm">Tarik file ke sini, atau tempel dengan Ctrl/⌘ + V. Bisa beberapa sekaligus.</span>
+             <span class="show-sm">Pilih beberapa screenshot sekaligus dari galeri.</span><br>
+             Screenshot diproses di perangkat ini dan tidak diunggah ke server.</p>
           <button class="btn primary" id="bPick">Pilih screenshot</button>
         </div>
         <div id="pages"></div>
@@ -755,7 +759,7 @@ function(r){"object"==typeof e&&void 0!==t?t.exports=r():"function"==typeof defi
     </div>
     <span class="spacer"></span>
     <button class="btn" id="rdUndo">Urungkan</button>
-    <button class="btn" id="rdClear">Hapus semua</button>
+    <button class="btn" id="rdClear">Hapus semua kotak</button>
     <button class="btn primary" id="rdSave">Simpan</button>
   </div>
   <div class="rdwrap"><div class="rdstage" id="rdStage"><img id="rdImg" alt=""></div></div>
@@ -783,7 +787,8 @@ const SIZES    = { a4:[210,297], letter:[215.9,279.4], a5:[148,210] };
 const DISPLAY_W = 900;               // lebar maksimum gambar pratinjau (px)
 const REDACT_RED = '#e01b1b';        // warna blok sensor
 const PREVIEW_JPEG = 0.9, EXPORT_JPEG = 0.92;   // kualitas JPEG pratinjau / file hasil
-const TOAST_MS = 2400;               // lama pesan singkat tampil
+// Pesan singkat tampil minimal 2,4 detik, lebih lama untuk pesan panjang (±60 ms per huruf).
+const TOAST_MIN_MS = 2400, TOAST_MAX_MS = 7000, TOAST_MS_PER_CHAR = 60;
 const RESIZE_DEBOUNCE_MS = 120, CAPTION_DEBOUNCE_MS = 220;
 const HIDDEN_RETRY_MS = 400;         // cek ulang saat area kerja belum punya lebar
 
@@ -884,7 +889,8 @@ function capText(i, it){ return numPrefix(i) + (state.opts.cap ? (it.caption||''
 let toastTimer = 0;
 function toast(msg){
   const t = $('#toast'); t.textContent = msg; t.classList.add('on');
-  clearTimeout(toastTimer); toastTimer = setTimeout(()=>t.classList.remove('on'), TOAST_MS);
+  const ms = Math.min(TOAST_MAX_MS, Math.max(TOAST_MIN_MS, msg.length*TOAST_MS_PER_CHAR));
+  clearTimeout(toastTimer); toastTimer = setTimeout(()=>t.classList.remove('on'), ms);
 }
 // Lapisan "sedang memproses" yang menutup layar selama kerja berat.
 function showBusy(msg){ $('#veilText').textContent = msg; $('#veil').classList.add('on'); }
@@ -1091,12 +1097,12 @@ function shotNode(b){
   box.appendChild(img);
 
   const tools = el('div','tools');
-  tools.appendChild(mkBtn('◀','Geser ke kiri',  e=>{ e.stopPropagation(); move(b.idx,-1); }));
-  tools.appendChild(mkBtn('▶','Geser ke kanan', e=>{ e.stopPropagation(); move(b.idx, 1); }));
+  tools.appendChild(mkBtn('◀','Pindahkan ke kiri',  e=>{ e.stopPropagation(); move(b.idx,-1); }));
+  tools.appendChild(mkBtn('▶','Pindahkan ke kanan', e=>{ e.stopPropagation(); move(b.idx, 1); }));
   const red = mkBtn(hasRed(b.item) ? '■'+b.item.red.length : '■', 'Sensor',
     e=>{ e.stopPropagation(); openRedactor(b.idx); });
   tools.appendChild(red);
-  const del = mkBtn('✕','Hapus', e=>{ e.stopPropagation(); removeAt(b.idx); });
+  const del = mkBtn('✕','Hapus screenshot ini', e=>{ e.stopPropagation(); removeAt(b.idx); });
   del.className = 'del'; tools.appendChild(del);
   box.appendChild(tools);
   attachDnD(box, b.idx);
@@ -1427,12 +1433,14 @@ function loadImg(src){
     i.onload = ()=>res(i); i.onerror = rej; i.src = src; });
 }
 async function addFiles(list){
-  const files = [...list].filter(f=>f.type.startsWith('image/'));
-  if(!files.length) return;
+  const all = [...list], files = all.filter(f=>f.type.startsWith('image/'));
+  // file yang bukan gambar (PDF, video, dll.) ikut dilaporkan, bukan dilewati diam-diam
+  const failed = all.filter(f=>!f.type.startsWith('image/')).map(f=>f.name);
+  if(!files.length){ if(failed.length) toast(addedMessage(0, failed)); return; }
   files.sort((a,b)=>a.name.localeCompare(b.name, undefined, {numeric:true, sensitivity:'base'}));
+  const before = state.items.length;
   showBusy('Memuat ' + files.length + ' screenshot…');
   await yieldUI();
-  const failed = [];
   for(const f of files){
     try{
       const dataURL = await readFile(f);
@@ -1443,15 +1451,15 @@ async function addFiles(list){
   }
   hideBusy(); render();
   // Screenshot baru tidak dipindai diam-diam: pengguna yang memutuskan lewat tombol Pindai.
-  toast(addedMessage(files.length - failed.length, failed));
+  toast(addedMessage(state.items.length - before, failed));
 }
-// Contoh: "4 screenshot ditambahkan. 1 tidak bisa dibuka: foto.heic"
+// Contoh: "4 screenshot ditambahkan. 1 file tidak bisa dibuka (foto.heic). Gunakan PNG atau JPG."
 function addedMessage(added, failed){
   const parts = [];
   if(added) parts.push(added + ' screenshot ditambahkan.');
   if(failed.length){
     const names = failed.slice(0, 2).join(', ') + (failed.length > 2 ? ', …' : '');
-    parts.push(failed.length + ' tidak bisa dibuka: ' + names);
+    parts.push(failed.length + ' file tidak bisa dibuka (' + names + '). Gunakan PNG atau JPG.');
   }
   return parts.join(' ');
 }
@@ -2184,6 +2192,7 @@ async function scanAll(){
   if(!todo.length){ showAutoResult(applyAuto()); return; }
   _scanning = true; _cancel = false;
   $('#veilCancel').hidden = false;
+  let failed = false;
   try{
     showBusy('Menyiapkan pemindai…'); await yieldUI();
     const wk = await getWorker();
@@ -2200,12 +2209,15 @@ async function scanAll(){
       it._photos = findPhotos(it);
     }
   }catch(err){
-    console.error(err);
-    toast('Pemindai gagal dimuat. Coba muat ulang halaman.');
+    console.error(err); failed = true;
   }finally{
     _scanning = false; $('#veilCancel').hidden = true; hideBusy();
   }
-  showAutoResult(applyAuto());
+  // Hasil yang sudah didapat tetap diterapkan; pesannya menjelaskan kenapa belum semua.
+  const result = applyAuto();
+  if(failed) toast('Pemindaian gagal. Periksa koneksi internet, lalu klik Pindai lagi.');
+  else if(_cancel) toast('Pemindaian dihentikan. ' + autoResultMessage(result));
+  else showAutoResult(result);
 }
 /* Kotak sensor otomatis untuk semua screenshot, tanpa mengubah apa pun (query).
    Dua tahap: deteksi per screenshot, lalu nilai yang ditemukan dicari ulang di semua
@@ -2242,10 +2254,11 @@ function applyAuto(){
   render();
   return { total, imgs };
 }
-function showAutoResult({ total, imgs }){
-  toast(total ? total + ' bagian disensor di ' + imgs + ' screenshot. Cek lagi sebelum diunduh.'
-              : 'Tidak ada data yang cocok dengan pilihanmu.');
+function autoResultMessage({ total, imgs }){
+  return total ? total + ' bagian disensor di ' + imgs + ' screenshot. Periksa lagi sebelum membuat dokumen.'
+               : 'Tidak ditemukan data untuk pilihan ini. Sensor manual tetap bisa dipakai.';
 }
+const showAutoResult = result => toast(autoResultMessage(result));
 
 /* ====================== encoder untuk export ====================== */
 const encCache = new Map();
@@ -2295,7 +2308,7 @@ async function runExport(kind, libReady, build){
     await build();
     toast(kind + ' sudah diunduh');
   }catch(err){
-    console.error(err); toast(kind + ' gagal dibuat. Coba lagi.');
+    console.error(err); toast(kind + ' gagal dibuat. Coba lagi, atau turunkan Kualitas gambar ke Normal.');
   }finally{ hideBusy(); }
 }
 
@@ -2464,7 +2477,7 @@ $('#dpi').addEventListener('change', e=>{ state.opts.dpi = e.target.value; });
 // hanya tersedia saat halaman dibuka lewat http/https.
 const autoSupported = location.protocol !== 'file:';
 $('#autoHint').textContent = autoSupported
-  ? 'Pemindaian pertama mengunduh sekitar 6 MB. Hasilnya bisa meleset, jadi cek lagi sebelum diunduh.'
+  ? 'Pemindaian pertama perlu mengunduh data sekitar 6 MB. Hasil sensor otomatis bisa meleset, jadi periksa lagi sebelum membuat dokumen.'
   : 'Sensor otomatis hanya bisa dipakai kalau halaman ini dibuka dari internet, bukan dari file di komputer. Sensor manual tetap bisa.';
 const catsNow = () => ({ ...state.auto.cats });
 const sameCats = (a, b) => !!a && !!b && Object.keys(a).every(k => !!a[k] === !!b[k]);
@@ -2510,7 +2523,7 @@ document.querySelectorAll('.linkbtn[data-all]').forEach(b=>b.addEventListener('c
   document.querySelectorAll('.cats input').forEach(c=>{ c.checked = on; state.auto.cats[c.dataset.cat] = on; });
   updateAutoUI();
 }));
-$('#veilCancel').addEventListener('click', ()=>{ _cancel = true; toast('Pemindaian dibatalkan'); });
+$('#veilCancel').addEventListener('click', ()=>{ _cancel = true; showBusy('Menghentikan pemindaian…'); });
 
 $('#bAdd').addEventListener('click', ()=>$('#file').click());
 $('#bPick').addEventListener('click', ()=>$('#file').click());
