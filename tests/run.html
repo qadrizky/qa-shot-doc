@@ -24,6 +24,7 @@
 <p class="sum" id="sum">Memuat aplikasi…</p>
 <p>
   <label><input type="checkbox" id="gUnit" checked> Unit (cepat)</label>
+  <label><input type="checkbox" id="gUi" checked> Antarmuka (cepat)</label>
   <label><input type="checkbox" id="gE2e" checked> End-to-end (OCR sungguhan, ±1–2 menit)</label>
   <button id="again">Jalankan lagi</button>
 </p>
@@ -33,6 +34,7 @@
 <script src="harness.js"></script>
 <script src="fixtures.js"></script>
 <script src="unit.js"></script>
+<script src="ui.js"></script>
 <script src="e2e.js"></script>
 <script>
 // Aplikasi dimuat ulang di iframe setiap kali tes dijalankan, supaya tiap putaran mulai dari keadaan kosong.
@@ -48,7 +50,7 @@ function loadApp(){
 }
 
 async function runAll(){
-  const groups = [['gUnit','unit'], ['gE2e','e2e']]
+  const groups = [['gUnit','unit'], ['gUi','ui'], ['gE2e','e2e']]
     .filter(([id]) => document.getElementById(id).checked).map(([, g]) => g);
   const list = document.getElementById('list'), sum = document.getElementById('sum');
   list.innerHTML = ''; sum.className = 'sum'; sum.textContent = 'Menjalankan…';

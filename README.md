@@ -242,6 +242,9 @@ Lalu buka `http://127.0.0.1:8000/tests/run.html`.
 - **Unit** (±1 detik) menguji logika deteksi dengan hasil OCR tiruan: pola NIK,
   tanggal lahir, nomor HP, pasangan label–nilai, validasi nilai, dan penyebaran
   nilai ke screenshot lain. Setiap kasus mengunci satu kesalahan yang pernah terjadi.
+- **Antarmuka** (±20 detik) menjalankan alur sehari-hari di luar pemindaian:
+  mengurutkan, menulis keterangan, menghapus beserta Urungkan, Hapus semua, dan
+  editor sensor manual (menggambar, menggeser, mengubah ukuran, Urungkan, Batal).
 - **End-to-end** (±1 menit) memuat aplikasi di iframe, menambahkan 7 screenshot
   sintetis, lalu menjalankan alur seperti pengguna: centang data, klik Pindai,
   ubah centang, Terapkan. Cakupan sensor diukur untuk tiga pilihan centang
@@ -249,4 +252,4 @@ Lalu buka `http://127.0.0.1:8000/tests/run.html`.
   ada yang salah tersensor.
 
 Semua data di tes ini fiktif. Hasil akhir juga muncul di judul tab
-(misalnya `LULUS 32/32` atau `GAGAL …`), sehingga bisa dibaca otomatis.
+(misalnya `LULUS 43/43` atau `GAGAL …`), sehingga bisa dibaca otomatis.

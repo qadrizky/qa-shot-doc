@@ -1,32 +1,12 @@
-// Tes end-to-end: 7 layar sintetis (fixtures.js) dipindai dengan OCR sungguhan lewat alur
-// yang sama dengan pengguna (centang dulu, lalu klik Pindai), lalu cakupan sensornya diukur
-// terhadap ground truth tiap layar.
 (function(){
   const { test, expect } = T;
-  const frame = () => document.getElementById('app').contentWindow;
-  const $ = sel => frame().document.querySelector(sel);
-  const wait = ms => new Promise(r => setTimeout(r, ms));
-  const fixtures = FX.all();
+  const { frame, $, wait, waitUntil, busy, addScreens, app } = UI;
+  const fixtures = FX.all().map(f => ({ name:f.name, canvas:f.c, T:f.T, N:f.N }));
 
-  async function addScreens(list){
-    const w = frame(), dt = new w.DataTransfer();
-    for(const f of list){
-      const blob = await new Promise(r => f.c.toBlob(r, 'image/png'));
-      dt.items.add(new w.File([blob], f.name + '.png', { type:'image/png' }));
-    }
-    const input = $('#file');
-    input.files = dt.files;
-    input.dispatchEvent(new w.Event('change', { bubbles:true }));
-    await waitUntil(() => !$('#veil').classList.contains('on'), 30000);
-  }
-  async function waitUntil(done, timeoutMs){
-    const until = Date.now() + timeoutMs;
-    while(!done()){ if(Date.now() > until) throw new Error('waktu habis'); await wait(250); }
-  }
   async function clickScan(){
     $('#bAutoRun').click();
     await wait(300);
-    await waitUntil(() => !$('#veil').classList.contains('on'), 240000);
+    await waitUntil(() => !busy(), 240000);
   }
   function setChecklist(cats){
     for(const box of frame().document.querySelectorAll('.cats input')){
@@ -35,11 +15,11 @@
     }
   }
   const button = () => $('#bAutoRun').textContent;
-  const autoBoxCount = () => frame().__qaShotDoc.state.items.reduce((n, it) => n + it.red.filter(b => b.auto).length, 0);
+  const autoBoxCount = () => app().state.items.reduce((n, it) => n + it.red.filter(b => b.auto).length, 0);
 
   // Cakupan kotak sensor terhadap ground truth, untuk satu pilihan checklist.
   function coverage(cats){
-    const api = frame().__qaShotDoc, state = api.state;
+    const api = app(), state = api.state;
     state.auto.cats = Object.fromEntries(Object.keys(state.auto.cats).map(k => [k, cats.includes(k)]));
     state.auto.applied = { ...state.auto.cats }; state.auto.on = true;
     api.applyAuto();
@@ -67,6 +47,7 @@
   }
 
   test('e2e', 'Alur: belum ada yang disensor sebelum tombol Pindai diklik', async () => {
+    app().state.items.length = 0;            // grup tes lain memakai aplikasi yang sama
     setChecklist(['ktpPhoto','selfie','nik','pob','dob','mother','name','phone','email']);
     await addScreens([fixtures[0]]);
     expect(button()).toBe('Pindai screenshot');
@@ -88,10 +69,10 @@
   test('e2e', 'Alur: screenshot baru tidak dipindai sebelum diminta', async () => {
     await addScreens(fixtures.slice(1));
     expect(button()).toBe('Pindai ' + (fixtures.length - 1) + ' screenshot baru');
-    const scanned = frame().__qaShotDoc.state.items.filter(it => it._ocr).length;
+    const scanned = app().state.items.filter(it => it._ocr).length;
     expect(scanned).toBe(1);
     await clickScan();
-    expect(frame().__qaShotDoc.state.items.filter(it => it._ocr).length).toBe(fixtures.length);
+    expect(app().state.items.filter(it => it._ocr).length).toBe(fixtures.length);
   });
   test('e2e', 'Deteksi: konfigurasi bawaan (foto + data)', () => {
     expectPerfect(coverage(['ktpPhoto','selfie','nik','pob','dob','mother','name','phone','email']));
